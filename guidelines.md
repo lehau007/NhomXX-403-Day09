@@ -16,7 +16,7 @@ Tài liệu này đóng vai trò như cẩm nang cho 3 thành viên team trong t
 ### 1.3 Lựa chọn LLM Provider Theo Vai Trò (Agent-Specific LLMs)
 Trong hệ thống Multi-Agent, không nên chỉ dùng một model cố định cho toàn bộ luồng. Việc chia nhỏ Worker cho phép team chọn Provider tối ưu về giá và tốc độ (cấu hình trong `.env`):
 - **Supervisor (Não bộ định tuyến):** Cần model suy luận mạnh, ít ảo giác để phân loại Task. Khuyên dùng **OpenAI** (như `gpt-4o-mini` hoặc `gpt-4o`).
-- **Synthesis Worker (Tổng hợp nội dung):** Đòi hỏi tốc độ trả lời cực nhanh để không làm tăng độ trễ tổng thể (latency) của pipeline. Rất phù hợp sử dụng **Groq** (Sử dụng OpenAI Client với `base_url` của Groq và model như `llama3-8b-8192`).
+- **Synthesis Worker (Tổng hợp nội dung):** Đòi hỏi tốc độ trả lời cực nhanh để không làm tăng độ trễ tổng thể (latency) của pipeline. Rất phù hợp sử dụng **Groq** (Sử dụng OpenAI Client với `base_url` của Groq và model như `openai/gpt-oss-120b`).
 - **Policy/Retrieval Worker:** Dùng **Google (Gemini)** cho vector embedding (`gemini-embedding-2-preview`) hoặc các model chuyên dụng giá rẻ.
 - **Quy tắc Bắt Buộc:** **KHÔNG ĐƯỢC HARDCODE** model name hay API key vào trong code của Worker. Tất cả cấu hình này phải lấy từ biến môi trường (`os.getenv("SUPERVISOR_MODEL")`, `os.getenv("GROQ_API_KEY")`, v.v.).
 
