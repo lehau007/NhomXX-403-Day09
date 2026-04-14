@@ -16,13 +16,17 @@ Gọi độc lập để test:
 """
 
 import os
-import sys
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ─────────────────────────────────────────────
 # Worker Contract (xem contracts/worker_contracts.yaml)
 # Input:  {"task": str, "top_k": int = 3}
 # Output: {"retrieved_chunks": list, "retrieved_sources": list, "error": dict | None}
 # ─────────────────────────────────────────────
+
 
 WORKER_NAME = "retrieval_worker"
 DEFAULT_TOP_K = 3
@@ -31,35 +35,67 @@ DEFAULT_TOP_K = 3
 def _get_embedding_fn():
     """
     Trả về embedding function.
-    TODO Sprint 1: Implement dùng OpenAI hoặc Sentence Transformers.
+    Sprint 1: Dùng Google Generative AI (Gemini).
     """
-    # Option A: Sentence Transformers (offline, không cần API key)
-    try:
-        from sentence_transformers import SentenceTransformer
-        model = SentenceTransformer("all-MiniLM-L6-v2")
-        def embed(text: str) -> list:
-            return model.encode([text])[0].tolist()
-        return embed
-    except ImportError:
-        pass
+    model_provider = os.getenv("RETRIEVAL_PROVIDER", "google")
+    if model_provider == "google":
+        try:
+            import google.generativeai as genai
 
-    # Option B: OpenAI (cần API key)
-    try:
-        from openai import OpenAI
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        def embed(text: str) -> list:
-            resp = client.embeddings.create(input=text, model="text-embedding-3-small")
-            return resp.data[0].embedding
-        return embed
-    except ImportError:
-        pass
+            # Option: Google Gemini (Cần GOOGLE_API_KEY)
+            api_key = os.getenv("GOOGLE_API_KEY")
+            embedding_model = os.getenv("RETRIEVAL_MODEL", "gemini-embedding-2-preview")
+            if api_key:
+                try:
+                    genai.configure(api_key=api_key)
 
-    # Fallback: random embeddings cho test (KHÔNG dùng production)
-    import random
-    def embed(text: str) -> list:
-        return [random.random() for _ in range(384)]
-    print("⚠️  WARNING: Using random embeddings (test only). Install sentence-transformers.")
-    return embed
+                    def embed(text: str) -> list:
+                        result = genai.embed_content(model=embedding_model, content=text, task_type="retrieval_query")
+                        return result["embedding"]
+
+                    return embed
+                except Exception as e:
+                    print(f"⚠️  Google Embedding error: {e}")
+        except ImportError:
+            print("Error: google.generativeai is not installed")
+
+    elif model_provider == "openai":
+        try:
+            from openai import OpenAI
+
+            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            embedding_model = os.getenv("RETRIEVAL_MODEL", "text-embedding-3-small")
+
+            def embed(text: str) -> list:
+                resp = client.embeddings.create(input=text, model=embedding_model)
+                return resp.data[0].embedding
+
+            return embed
+        except ImportError:
+            pass
+    elif model_provider == "local":
+        try:
+            from sentence_transformers import SentenceTransformer
+
+            embedding_model = os.getenv("RETRIEVAL_MODEL", "all-MiniLM-L6-v2")
+            model = SentenceTransformer(embedding_model)
+
+            def embed(text: str) -> list:
+                return model.encode([text])[0].tolist()
+
+            return embed
+        except ImportError:
+            pass
+    else:
+        # Fallback: random embeddings cho test (KHÔNG dùng production)
+        import random
+
+        def embed(text: str) -> list:
+            # text-embedding-004 có 768 dimensions mặc định
+            return [random.random() for _ in range(768)]
+
+        print("⚠️  WARNING: Using random embeddings (test only). Check GOOGLE_API_KEY.")
+        return embed
 
 
 def _get_collection():
@@ -68,16 +104,14 @@ def _get_collection():
     TODO Sprint 2: Đảm bảo collection đã được build từ Step 3 trong README.
     """
     import chromadb
+
     client = chromadb.PersistentClient(path="./chroma_db")
     try:
         collection = client.get_collection("day09_docs")
     except Exception:
         # Auto-create nếu chưa có
-        collection = client.get_or_create_collection(
-            "day09_docs",
-            metadata={"hnsw:space": "cosine"}
-        )
-        print(f"⚠️  Collection 'day09_docs' chưa có data. Chạy index script trong README trước.")
+        collection = client.get_or_create_collection("day09_docs", metadata={"hnsw:space": "cosine"})
+        print("⚠️  Collection 'day09_docs' chưa có data. Chạy index script trong README trước.")
     return collection
 
 
@@ -100,23 +134,21 @@ def retrieve_dense(query: str, top_k: int = DEFAULT_TOP_K) -> list:
     try:
         collection = _get_collection()
         results = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-            include=["documents", "distances", "metadatas"]
+            query_embeddings=[query_embedding], n_results=top_k, include=["documents", "distances", "metadatas"]
         )
 
         chunks = []
-        for i, (doc, dist, meta) in enumerate(zip(
-            results["documents"][0],
-            results["distances"][0],
-            results["metadatas"][0]
-        )):
-            chunks.append({
-                "text": doc,
-                "source": meta.get("source", "unknown"),
-                "score": round(1 - dist, 4),  # cosine similarity
-                "metadata": meta,
-            })
+        for i, (doc, dist, meta) in enumerate(
+            zip(results["documents"][0], results["distances"][0], results["metadatas"][0])
+        ):
+            chunks.append(
+                {
+                    "text": doc,
+                    "source": meta.get("source", "unknown"),
+                    "score": round(1 - dist, 4),  # cosine similarity
+                    "metadata": meta,
+                }
+            )
         return chunks
 
     except Exception as e:
@@ -163,9 +195,7 @@ def run(state: dict) -> dict:
             "chunks_count": len(chunks),
             "sources": sources,
         }
-        state["history"].append(
-            f"[{WORKER_NAME}] retrieved {len(chunks)} chunks from {sources}"
-        )
+        state["history"].append(f"[{WORKER_NAME}] retrieved {len(chunks)} chunks from {sources}")
 
     except Exception as e:
         worker_io["error"] = {"code": "RETRIEVAL_FAILED", "reason": str(e)}
