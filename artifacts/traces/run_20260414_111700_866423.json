@@ -1,0 +1,231 @@
+{
+  "task": "Ticket P1 lúc 2am. Cần cấp Level 2 access tạm thời cho contractor để thực hiện emergency fix. Đồng thời cần notify stakeholders theo SLA. Nêu đủ cả hai quy trình.",
+  "route_reason": "matched policy/access keywords: ['access'] | risk_high because of: ['emergency', '2am']",
+  "risk_high": true,
+  "needs_tool": true,
+  "hitl_triggered": false,
+  "retrieved_chunks": [
+    {
+      "text": "SLA TICKET - QUY ĐỊNH XỬ LÝ SỰ CỐ\nSource: support/sla-p1-2026.pdf\nDepartment: IT\nEffective Date: 2026-01-15\nAccess: internal\n\n=== Phần 1: Định nghĩa mức độ ưu tiên ===\n\nP1 — CRITICAL (Khẩn cấp):\nĐịnh nghĩa: Sự cố ảnh hưởng toàn bộ hệ thống production, không có workaround.\nVí dụ: Database sập, API gateway down, toàn bộ người dùng không thể đăng nhập.\n\nP2 — HIGH (Nghiêm trọng):\nĐịnh nghĩa: Sự cố ảnh hưởng một phần hệ thống, có workaround tạm thời.\nVí dụ: Một số tính năng không hoạt động, ảnh hưởng một nhóm người dùng.\n\nP3 — MEDIUM (Trung bình):\nĐịnh nghĩa: Lỗi ảnh hưởng không đáng kể, người dùng vẫn làm việc được.\n\nP4 — LOW (Thấp):\nĐịnh nghĩa: Yêu cầu cải tiến, gợi ý, hoặc lỗi giao diện nhỏ.\n\n=== Phần 2: SLA theo mức độ ưu tiên ===\n\nTicket P1:\n- Phản hồi ban đầu (first response): 15 phút kể từ khi ticket được tạo.\n- Xử lý và khắc phục (resolution): 4 giờ.\n- Escalation: Tự động escalate lên Senior Engineer nếu không có phản hồi trong 10 phút.\n- Thông báo stakeholder: Ngay khi nhận ticket, update mỗi 30 phút cho đến khi resolve.\n\nTicket P2:\n- Phản hồi ban đầu: 2 giờ.\n- Xử lý và khắc phục: 1 ngày làm việc.\n- Escalation: Tự động escalate sau 90 phút không có phản hồi.\n\nTicket P3:\n- Phản hồi ban đầu: 1 ngày làm việc.\n- Xử lý và khắc phục: 5 ngày làm việc.\n\nTicket P4:\n- Phản hồi ban đầu: 3 ngày làm việc.\n- Xử lý và khắc phục: Theo sprint cycle (thông thường 2-4 tuần).\n\n=== Phần 3: Quy trình xử lý sự cố P1 ===\n\nBước 1: Tiếp nhận\nOn-call engineer nhận alert hoặc ticket, xác nhận severity trong 5 phút.\n\nBước 2: Thông báo\nGửi thông báo tới Slack #incident-p1 và email incident@company.internal ngay lập tức.\n\nBước 3: Triage và phân công\nLead Engineer phân công engineer xử lý trong 10 phút.\n\nBước 4: Xử lý\nEngineer cập nhật tiến độ lên ticket mỗi 30 phút. Nếu cần hỗ trợ thêm, escalate ngay.\n\nBước 5: Resolution\nSau khi khắc phục, viết incident report trong vòng 24 giờ.\n\n=== Phần 4: Công cụ và kênh liên lạc ===\nTicket system: Jira (project IT-SUPPORT)\nSlack channel: #incident-p1, #incident-p2\nPagerDuty: Tự động nhắn on-call khi P1 ticket mới\nHotline on-call: ext. 9999 (24/7)\n\n=== Phần 5: Lịch sử phiên bản ===\nv2026.1 (2026-01-15): Cập nhật SLA P1 resolution từ 6 giờ xuống 4 giờ.\nv2025.3 (2025-09-01): Thêm quy trình escalation tự động.\nv2025.1 (2025-03-01): Phiên bản đầu tiên.\n",
+      "source": "sla_p1_2026.txt",
+      "score": 0.7978,
+      "metadata": {
+        "source": "sla_p1_2026.txt"
+      }
+    },
+    {
+      "text": "QUY TRÌNH KIỂM SOÁT TRUY CẬP HỆ THỐNG (ACCESS CONTROL SOP)\nSource: it/access-control-sop.md\nDepartment: IT Security\nEffective Date: 2026-01-01\nAccess: internal\n\nGhi chú: Tài liệu này trước đây có tên \"Approval Matrix for System Access\".\n\n=== Section 1: Phạm vi và mục đích ===\nTài liệu này quy định quy trình cấp phép truy cập vào các hệ thống nội bộ của công ty.\nÁp dụng cho tất cả nhân viên, contractor, và third-party vendor.\n\n=== Section 2: Phân cấp quyền truy cập ===\n\nLevel 1 — Read Only:\nÁp dụng cho: Tất cả nhân viên mới trong 30 ngày đầu.\nPhê duyệt: Line Manager.\nThời gian xử lý: 1 ngày làm việc.\n\nLevel 2 — Standard Access:\nÁp dụng cho: Nhân viên chính thức đã qua thử việc.\nPhê duyệt: Line Manager + IT Admin.\nThời gian xử lý: 2 ngày làm việc.\n\nLevel 3 — Elevated Access:\nÁp dụng cho: Team Lead, Senior Engineer, Manager.\nPhê duyệt: Line Manager + IT Admin + IT Security.\nThời gian xử lý: 3 ngày làm việc.\n\nLevel 4 — Admin Access:\nÁp dụng cho: DevOps, SRE, IT Admin.\nPhê duyệt: IT Manager + CISO.\nThời gian xử lý: 5 ngày làm việc.\nYêu cầu thêm: Training bắt buộc về security policy.\n\n=== Section 3: Quy trình yêu cầu cấp quyền ===\n\nBước 1: Nhân viên tạo Access Request ticket trên Jira (project IT-ACCESS).\nBước 2: Line Manager phê duyệt yêu cầu trong 1 ngày làm việc.\nBước 3: IT Admin kiểm tra compliance và cấp quyền.\nBước 4: IT Security review với Level 3 và Level 4.\nBước 5: Nhân viên nhận thông báo qua email khi quyền được cấp.\n\n=== Section 4: Escalation khi cần thay đổi quyền hệ thống ===\nEscalation chỉ áp dụng khi cần thay đổi quyền hệ thống ngoài quy trình thông thường.\nVí dụ: Khẩn cấp trong sự cố P1, cần cấp quyền tạm thời để fix incident.\n\nQuy trình escalation khẩn cấp:\n1. On-call IT Admin có thể cấp quyền tạm thời (max 24 giờ) sau khi được Tech Lead phê duyệt bằng lời.\n2. Sau 24 giờ, phải có ticket chính thức hoặc quyền bị thu hồi tự động.\n3. Mọi quyền tạm thời phải được ghi log vào hệ thống Security Audit.\n\n=== Section 5: Thu hồi quyền truy cập ===\nQuyền phải được thu hồi trong các trường hợp:\n- Nhân viên nghỉ việc: Thu hồi ngay trong ngày cuối.\n- Hết hạn contract: Thu hồi đúng ngày hết hạn.\n- Chuyển bộ phận: Điều chỉnh trong 3 ngày làm việc.\n\n=== Section 6: Audit và review định kỳ ===\nIT Security thực hiện access review mỗi 6 tháng.\nMọi bất thường phải được báo cáo lên CISO trong vòng 24 giờ.\n\n=== Section 7: Công cụ liên quan ===\nTicket system: Jira (project IT-ACCESS)\nIAM system: Okta\nAudit log: Splunk\nEmail: it-access@company.internal\n",
+      "source": "access_control_sop.txt",
+      "score": 0.7774,
+      "metadata": {
+        "source": "access_control_sop.txt"
+      }
+    },
+    {
+      "text": "IT HELPDESK FAQ — CÂU HỎI THƯỜNG GẶP\nSource: support/helpdesk-faq.md\nDepartment: IT\nEffective Date: 2026-01-20\nAccess: internal\n\n=== Section 1: Tài khoản và mật khẩu ===\n\nQ: Tôi quên mật khẩu, phải làm gì?\nA: Truy cập https://sso.company.internal/reset hoặc liên hệ Helpdesk qua ext. 9000. Mật khẩu mới sẽ được gửi qua email công ty trong vòng 5 phút.\n\nQ: Tài khoản bị khóa sau bao nhiêu lần đăng nhập sai?\nA: Tài khoản bị khóa sau 5 lần đăng nhập sai liên tiếp. Để mở khóa, liên hệ IT Helpdesk hoặc tự reset qua portal SSO.\n\nQ: Mật khẩu cần thay đổi định kỳ không?\nA: Có. Mật khẩu phải được thay đổi mỗi 90 ngày. Hệ thống sẽ nhắc nhở 7 ngày trước khi hết hạn.\n\n=== Section 2: VPN và kết nối từ xa ===\n\nQ: Phần mềm VPN nào công ty dùng?\nA: Công ty sử dụng Cisco AnyConnect. Download tại https://vpn.company.internal/download.\n\nQ: Tôi bị mất kết nối VPN liên tục, phải làm gì?\nA: Kiểm tra kết nối Internet trước. Nếu vẫn lỗi, tạo ticket P3 với log file VPN đính kèm.\n\nQ: VPN có giới hạn số thiết bị không?\nA: Mỗi tài khoản được kết nối VPN trên tối đa 2 thiết bị cùng lúc.\n\n=== Section 3: Phần mềm và license ===\n\nQ: Tôi cần cài phần mềm mới, phải làm gì?\nA: Gửi yêu cầu qua Jira project IT-SOFTWARE. Line Manager phải phê duyệt trước khi IT cài đặt.\n\nQ: Ai chịu trách nhiệm gia hạn license phần mềm?\nA: IT Procurement team quản lý tất cả license. Nhắc nhở sẽ được gửi 30 ngày trước khi hết hạn.\n\n=== Section 4: Thiết bị và phần cứng ===\n\nQ: Laptop mới được cấp sau bao lâu khi vào công ty?\nA: Laptop được cấp trong ngày onboarding đầu tiên. Nếu có vấn đề, liên hệ HR hoặc IT Admin.\n\nQ: Laptop bị hỏng phải báo cáo như thế nào?\nA: Tạo ticket P2 hoặc P3 tùy mức độ nghiêm trọng. Mang thiết bị đến IT Room (tầng 3) để kiểm tra.\n\n=== Section 5: Email và lịch ===\n\nQ: Hộp thư đến đầy, phải làm gì?\nA: Xóa email cũ hoặc yêu cầu tăng dung lượng qua ticket IT-ACCESS. Dung lượng tiêu chuẩn là 50GB.\n\nQ: Tôi không nhận được email từ bên ngoài?\nA: Kiểm tra thư mục Spam trước. Nếu vẫn không có, tạo ticket P2 kèm địa chỉ email gửi và thời gian gửi.\n\n=== Section 6: Liên hệ IT Helpdesk ===\nHotline: ext. 9000 (8:00 - 18:00, Thứ 2 - Thứ 6)\nEmail: helpdesk@company.internal\nJira: project IT-SUPPORT\nSlack: #it-helpdesk\nEmergency (ngoài giờ): ext. 9999\n",
+      "source": "it_helpdesk_faq.txt",
+      "score": 0.7066,
+      "metadata": {
+        "source": "it_helpdesk_faq.txt"
+      }
+    }
+  ],
+  "retrieved_sources": [
+    "sla_p1_2026.txt",
+    "access_control_sop.txt",
+    "it_helpdesk_faq.txt"
+  ],
+  "policy_result": {
+    "policy_applies": false,
+    "policy_name": "refund_policy_v4",
+    "exceptions_found": [
+      {
+        "type": "digital_product_exception",
+        "rule": "Sản phẩm kỹ thuật số hoặc subscription không được hoàn tiền (Điều 3).",
+        "source": "policy_refund_v4.txt"
+      }
+    ],
+    "source": [
+      "sla_p1_2026.txt",
+      "access_control_sop.txt",
+      "it_helpdesk_faq.txt",
+      "policy_refund_v4.txt"
+    ],
+    "policy_version_note": "",
+    "rule": "Sản phẩm kỹ thuật số hoặc subscription không được hoàn tiền (Điều 3).",
+    "explanation": "Policy analysis based on explicit refund/access rules and exception detection.",
+    "mcp_context": "Tool check_access_permission returned: {'access_level': 2, 'requester_role': 'user', 'can_grant': True, 'required_approvers': ['Line Manager', 'IT Admin'], 'emergency_override': True, 'notes': ['Level 2 có thể cấp tạm thời với approval đồng thời của Line Manager và IT Admin on-call.'], 'source': 'access_control_sop.txt'}"
+  },
+  "mcp_tools_used": [
+    {
+      "tool": "check_access_permission",
+      "input": {
+        "access_level": 2,
+        "requester_role": "user",
+        "is_emergency": true
+      },
+      "output": {
+        "access_level": 2,
+        "requester_role": "user",
+        "can_grant": true,
+        "required_approvers": [
+          "Line Manager",
+          "IT Admin"
+        ],
+        "emergency_override": true,
+        "notes": [
+          "Level 2 có thể cấp tạm thời với approval đồng thời của Line Manager và IT Admin on-call."
+        ],
+        "source": "access_control_sop.txt"
+      },
+      "error": null,
+      "timestamp": "2026-04-14T18:17:03.677252"
+    },
+    {
+      "tool": "get_ticket_info",
+      "input": {
+        "ticket_id": "P1"
+      },
+      "output": {
+        "error": "Ticket 'P1' khong tim thay.",
+        "available_ids": [
+          "P1-LATEST",
+          "IT-1234"
+        ]
+      },
+      "error": {
+        "code": "MCP_CALL_FAILED",
+        "reason": "Ticket 'P1' khong tim thay."
+      },
+      "timestamp": "2026-04-14T18:17:04.071648"
+    }
+  ],
+  "final_answer": "*   Situation: P1 ticket at 2am.\n    *   Requirement 1: Temporary Level 2 access for a contractor for an emergency fix.\n    *   Requirement 2: Notify stakeholders according to SLA.\n    *   Constraints: Answer only from provided context, cite inline, mention policy exceptions before conclusion, concise/structured/factual, Vietnamese language, no `<think>` tags.\n\n    *   Source [1] `sla_p1_2026.txt`:\n        *   SLA P1: First response 15 mins, resolution 4 hours.\n        *   Stakeholder notification: Notify immediately upon receiving the ticket, then update every 30 minutes until resolved.\n        *   P1 process:\n            *   Step 1: On-call engineer confirms severity in 5 mins.\n            *   Step 2: Notify Slack #incident-p1 and email incident@company.internal immediately.\n            *   Step 3: Lead Engineer assigns engineer within 10 mins.\n            *   Step 4: Engineer updates ticket every 30 mins.\n    *   Source [2] `access_control_sop.txt`:\n        *   Standard Level 2 access requires Line Manager + IT Admin approval and takes 2 working days.\n        *   Emergency escalation (for P1 incidents): On-call IT Admin can grant temporary access (max 24 hours) after verbal approval from the Tech Lead.\n        *   Requirement: Must have a formal ticket after 24 hours or access is revoked automatically.\n        *   Requirement: All temporary access must be logged in the Security Audit system.\n\n    *   *Process 1: Granting temporary Level 2 access*\n        *   On-call IT Admin grants temporary access (max 24 hours) [access_control_sop.txt].\n        *   Requirement: Verbal approval from Tech Lead [access_control_sop.txt].\n        *   Post-action: Log into Security Audit system [access_control_sop.txt].\n        *   Follow-up: Formal ticket required after 24 hours, otherwise access is revoked automatically [access_control_sop.txt].\n\n    *   *Process 2: Notifying stakeholders*\n        *   Timeline: Notify immediately upon receiving ticket, then update every 30 minutes until resolved [sla_p1_2026.txt].\n        *   Channels: Send notification to Slack #incident-p1 and email incident@company.internal immediately [sla_p1_2026.txt].\n        *   Progress: Engineer updates progress on the ticket every 30 minutes [sla_p1_2026.txt].\n\n    *   Check for policy exceptions mentioned in the text. The \"POLICY EXCEPTIONS\" block mentions refund policies [policy_refund_v4.txt], which are irrelevant to this technical/access request. I will check if there are internal exceptions within the SOPs. The emergency access is technically an escalation/exception to the standard process.\n\n    *   Structure:\n        1. Quy trình cấp quyền Level 2 tạm thời.\n        2. Quy trình thông báo stakeholders.\n        3. Ngoại lệ chính sách (if any).\n        4. Conclusion (if applicable).\n\n    *   *Self-Correction during drafting*: Ensure citations are exactly [source_name]. Ensure Vietnamese.\n\n    *   Process 1 (Access): On-call IT Admin cấp quyền tạm thời (tối đa 24 giờ) sau khi có phê duyệt bằng lời từ Tech Lead [access_control_sop.txt]. Quyền này phải được ghi log vào hệ thống Security Audit [access_control_sop.txt]. Sau 24 giờ, cần có ticket chính thức nếu không quyền sẽ bị thu hồi tự động [access_control_sop.txt].\n    *   Process 2 (Notify): Thông báo ngay lập tức cho stakeholder qua Slack #incident-p1 và email incident@company.internal [sla_p1_2026.txt]. Cập nhật tiến độ cho stakeholder mỗi 30 phút cho đến khi sự cố được giải quyết [sla_p1_2026.txt]. Engineer cũng cần cập nhật tiến độ lên ticket mỗi 30 phút [sla_p1_2026.txt].\nDưới đây là quy trình xử lý cho tình huống ticket P1 lúc 2am:\n\n**1. Quy trình cấp quyền Level 2 tạm thời cho contractor:**\nVì đây là trường hợp khẩn cấp trong sự cố P1, quy trình escalation được áp dụng như sau:\n*   **Cấp quyền:** On-call IT Admin có thể cấp quyền tạm thời với thời hạn tối đa 24 giờ [access_control_sop.txt].\n*   **Phê duyệt:** Cần có sự phê duyệt bằng lời từ Tech Lead [access_control_sop.txt].\n*   **Yêu cầu bắt buộc:** \n    *   Mọi quyền tạm thời phải được ghi log vào hệ thống Security Audit [access_control_sop.txt].\n    *   Sau 24 giờ, phải có ticket chính thức hoặc quyền truy cập sẽ bị thu hồi tự động [access_control_sop.txt].\n\n**2. Quy trình thông báo stakeholders theo SLA P1:**\n*   **Thông báo tức thời:** Gửi thông báo ngay lập tức tới kênh Slack #incident-p1 và email incident@company.internal [sla_p1_2026.txt].\n*   **Tần suất cập nhật:** \n    *   Thông báo cho stakeholder ngay khi nhận ticket và cập nhật mỗi 30 phút cho đến khi resolve [sla_p1_2026.txt].\n    *   Engineer xử lý phải cập nhật tiến độ lên ticket mỗi 30 phút [sla_p1_2026.txt].\n\n**Ngoại lệ chính sách:**\n*   Đối với quyền truy cập, quy trình khẩn cấp này thay thế cho quy trình thông thường (vốn yêu cầu phê duyệt từ Line Manager + IT Admin và mất 2 ngày làm việc) [access_control_sop.txt].",
+  "sources": [
+    "sla_p1_2026.txt",
+    "access_control_sop.txt",
+    "it_helpdesk_faq.txt",
+    "policy_refund_v4.txt"
+  ],
+  "confidence": 0.71,
+  "history": [
+    "[supervisor] received task: Ticket P1 lúc 2am. Cần cấp Level 2 access tạm thời cho contractor để thực hiện emergency fix. Đồng thời cần notify stake",
+    "[supervisor] provider=groq model=openai/gpt-oss-120b route=policy_tool_worker needs_tool=True risk_high=True",
+    "[retrieval_worker] retrieved 3 chunks from ['sla_p1_2026.txt', 'access_control_sop.txt', 'it_helpdesk_faq.txt']",
+    "[policy_tool_worker] called MCP check_access_permission (Level 2)",
+    "[policy_tool_worker] called MCP get_ticket_info (P1)",
+    "[policy_tool_worker] policy_applies=False, exceptions=1",
+    "[synthesis_worker] answer generated, confidence=0.71, sources=['sla_p1_2026.txt', 'access_control_sop.txt', 'it_helpdesk_faq.txt', 'policy_refund_v4.txt']",
+    "[graph] completed in 41358ms"
+  ],
+  "workers_called": [
+    "retrieval_worker",
+    "policy_tool_worker",
+    "synthesis_worker"
+  ],
+  "worker_io_logs": [
+    {
+      "worker": "supervisor",
+      "input": {
+        "task": "Ticket P1 lúc 2am. Cần cấp Level 2 access tạm thời cho contractor để thực hiện emergency fix. Đồng thời cần notify stakeholders theo SLA. Nêu đủ cả hai quy trình.",
+        "llm_profile": {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b"
+        }
+      },
+      "output": {
+        "supervisor_route": "policy_tool_worker",
+        "route_reason": "matched policy/access keywords: ['access'] | risk_high because of: ['emergency', '2am']",
+        "needs_tool": true,
+        "risk_high": true
+      },
+      "error": null
+    },
+    {
+      "worker": "retrieval_worker",
+      "input": {
+        "task": "Ticket P1 lúc 2am. Cần cấp Level 2 access tạm thời cho contractor để thực hiện emergency fix. Đồng thời cần notify stakeholders theo SLA. Nêu đủ cả hai quy trình.",
+        "top_k": 3,
+        "llm_profile": {
+          "provider": "google",
+          "model": "gemini-embedding-2-preview"
+        }
+      },
+      "output": {
+        "chunks_count": 3,
+        "sources": [
+          "sla_p1_2026.txt",
+          "access_control_sop.txt",
+          "it_helpdesk_faq.txt"
+        ]
+      },
+      "error": null
+    },
+    {
+      "worker": "policy_tool_worker",
+      "input": {
+        "task": "Ticket P1 lúc 2am. Cần cấp Level 2 access tạm thời cho contractor để thực hiện emergency fix. Đồng thời cần notify stakeholders theo SLA. Nêu đủ cả hai quy trình.",
+        "chunks_count": 3,
+        "needs_tool": true,
+        "llm_profile": {
+          "provider": "google",
+          "model": "gemma-4-31b-it"
+        }
+      },
+      "output": {
+        "policy_applies": false,
+        "policy_name": "refund_policy_v4",
+        "exceptions_count": 1,
+        "mcp_calls": 2
+      },
+      "error": null
+    },
+    {
+      "worker": "synthesis_worker",
+      "input": {
+        "task": "Ticket P1 lúc 2am. Cần cấp Level 2 access tạm thời cho contractor để thực hiện emergency fix. Đồng thời cần notify stakeholders theo SLA. Nêu đủ cả hai quy trình.",
+        "chunks_count": 3,
+        "has_policy": true,
+        "llm_profile": {
+          "provider": "google",
+          "model": "gemma-4-31b-it"
+        }
+      },
+      "output": {
+        "answer_length": 4846,
+        "sources": [
+          "sla_p1_2026.txt",
+          "access_control_sop.txt",
+          "it_helpdesk_faq.txt",
+          "policy_refund_v4.txt"
+        ],
+        "confidence": 0.71
+      },
+      "error": null
+    }
+  ],
+  "supervisor_route": "policy_tool_worker",
+  "latency_ms": 41358,
+  "run_id": "run_20260414_111700_866423",
+  "timestamp": "2026-04-14T11:17:00Z",
+  "retrieval_top_k": 3,
+  "llm_profiles": {
+    "supervisor": {
+      "provider": "groq",
+      "model": "openai/gpt-oss-120b"
+    },
+    "synthesis": {
+      "provider": "google",
+      "model": "gemma-4-31b-it"
+    },
+    "retrieval": {
+      "provider": "google",
+      "model": "gemini-embedding-2-preview"
+    },
+    "policy": {
+      "provider": "google",
+      "model": "gemma-4-31b-it"
+    }
+  },
+  "question_id": "q15"
+}
