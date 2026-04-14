@@ -23,29 +23,27 @@ Hệ thống được xây dựng theo mô hình **Supervisor-Worker** sử dụ
 
 Sơ đồ luồng xử lý từ khi nhận yêu cầu đến khi trả về kết quả:
 
-```
-User Request
-     │
-     ▼
-┌──────────────┐
-│  Supervisor  │ (Phân loại: Retrieval / Policy / HITL)
-└──────┬───────┘
-       │
-   [route_decision]
-       │
-  ┌────┼────────────────────┐
-  │    ▼                    ▼
-  │  Retrieval Worker     Policy Tool Worker
-  │  (ChromaDB Search)    (Policy Analysis + MCP)
-  │    │                    │
-  │    └─────────┬──────────┘
-  ▼              ▼
-Human Review   Synthesis Worker
-(HITL Node)    (Grounded Generation)
-  │              │
-  └──────────────┤
-                 ▼
-              Output (Answer + Citations)
+```text
+       [ User Request ]
+              │
+              ▼
+      ┌──────────────┐
+      │  Supervisor  │ (Phân loại Task, Đánh giá Rủi ro, Quyết định Route)
+      └──────┬───────┘
+             │
+      ┌──────┴─────────────────────────────────┐
+      │             [ Route Decision ]         │
+      ▼                      ▼                 ▼
+[ Retrieval Worker ]  [ Policy Worker ]  [ Human Review ]
+ (Tra cứu Knowledge)   (Kiểm tra Policy)  (HITL - Chờ duyệt)
+      │             (Gọi MCP Tool Call)        │
+      └──────────────┬─────────────────────────┘
+                     │
+                     ▼
+           [ Synthesis Worker ] (Tổng hợp Answer + Trích dẫn Source)
+                     │
+                     ▼
+              [ Final Output ]
 ```
 
 ---
