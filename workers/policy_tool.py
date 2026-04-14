@@ -12,42 +12,59 @@ WORKER_NAME = "policy_tool_worker"
 
 def _call_mcp_tool(tool_name: str, tool_input: dict) -> dict:
     """
-    Sprint 3: SSE/HTTP MCP client implementation.
+    Sprint 3: SSE/HTTP MCP client implementation with retry and timeout.
     """
-    try:
-        import asyncio
-        import json
+    import asyncio
+    import json
+
+    async def _run():
         from mcp.client.sse import sse_client
         from mcp.client.session import ClientSession
 
-        async def _run():
-            async with sse_client("http://127.0.0.1:8082/sse") as streams:
-                async with ClientSession(streams[0], streams[1]) as session:
-                    await session.initialize()
-                    result = await session.call_tool(tool_name, arguments=tool_input)
-                    if result.isError:
-                        return {"error": result.content[0].text}
-                    return json.loads(result.content[0].text)
+        async with sse_client("http://127.0.0.1:8082/sse") as streams:
+            async with ClientSession(streams[0], streams[1]) as session:
+                await session.initialize()
+                result = await session.call_tool(tool_name, arguments=tool_input)
+                if result.isError:
+                    return {"error": result.content[0].text}
+                return json.loads(result.content[0].text)
 
-        result = asyncio.run(_run())
-        error = None
-        if isinstance(result, dict) and result.get("error"):
-            error = {"code": "MCP_CALL_FAILED", "reason": str(result["error"])}
-        return {
-            "tool": tool_name,
-            "input": tool_input,
-            "output": result,
-            "error": error,
-            "timestamp": datetime.now().isoformat(),
-        }
-    except Exception as error:
-        return {
-            "tool": tool_name,
-            "input": tool_input,
-            "output": None,
-            "error": {"code": "MCP_CALL_FAILED", "reason": str(error)},
-            "timestamp": datetime.now().isoformat(),
-        }
+    max_retries = 2
+    last_error = None
+
+    for attempt in range(max_retries + 1):
+        try:
+            # Create a fresh event loop to avoid conflicts
+            loop = asyncio.new_event_loop()
+            try:
+                result = loop.run_until_complete(asyncio.wait_for(_run(), timeout=15.0))
+            finally:
+                loop.close()
+
+            error = None
+            if isinstance(result, dict) and result.get("error"):
+                error = {"code": "MCP_CALL_FAILED", "reason": str(result["error"])}
+            return {
+                "tool": tool_name,
+                "input": tool_input,
+                "output": result,
+                "error": error,
+                "timestamp": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries:
+                import time
+                time.sleep(0.5)
+                continue
+
+    return {
+        "tool": tool_name,
+        "input": tool_input,
+        "output": None,
+        "error": {"code": "MCP_CALL_FAILED", "reason": str(last_error)},
+        "timestamp": datetime.now().isoformat(),
+    }
 
 
 def _extract_access_level(task: str) -> int:

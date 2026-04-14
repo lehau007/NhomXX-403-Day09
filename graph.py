@@ -73,36 +73,55 @@ def _llm_supervisor_route(task: str, llm_profile: dict) -> tuple[RouteName, str,
     provider = llm_profile.get("provider", "openai").lower()
     model = llm_profile.get("model", "gpt-4o-mini")
 
-    if provider != "openai":
+    if provider not in {"openai", "groq"}:
         return None
 
-    api_key = os.getenv("OPENAI_API_KEY")
+    if provider == "groq":
+        api_key = os.getenv("GROQ_API_KEY")
+        base_url = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
+    else:
+        api_key = os.getenv("OPENAI_API_KEY")
+        base_url = None
+
     if not api_key:
         return None
 
     try:
         from openai import OpenAI
 
-        client = OpenAI(api_key=api_key, timeout=3.0)
+        client_kwargs = {"api_key": api_key, "timeout": 8.0}
+        if base_url:
+            client_kwargs["base_url"] = base_url
+        client = OpenAI(**client_kwargs)
         prompt = (
             "You are a supervisor router for a multi-agent IT helpdesk system.\n"
             "Choose exactly one route from: retrieval_worker, policy_tool_worker, human_review.\n"
             "Use policy_tool_worker for refund, flash sale, license, access level, permission tasks.\n"
-            "Use retrieval_worker for P1, SLA, ticket, escalation, incident questions.\n"
+            "Use retrieval_worker for P1, SLA, ticket, escalation, incident, FAQ, password, remote work, HR questions.\n"
             "Use human_review for ambiguous error-code issues without enough context.\n"
-            "Return strict JSON with keys: route, needs_tool, risk_high, route_reason."
+            "Return ONLY a strict JSON object (no markdown fences) with keys: route, needs_tool, risk_high, route_reason."
         )
-        response = client.chat.completions.create(
-            model=model,
-            temperature=0,
-            max_tokens=120,
-            response_format={"type": "json_object"},
-            messages=[
+        create_kwargs = {
+            "model": model,
+            "temperature": 0,
+            "max_tokens": 200,
+            "messages": [
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": task},
             ],
-        )
+        }
+        try:
+            create_kwargs["response_format"] = {"type": "json_object"}
+            response = client.chat.completions.create(**create_kwargs)
+        except Exception:
+            # Fallback: some models don't support response_format
+            del create_kwargs["response_format"]
+            response = client.chat.completions.create(**create_kwargs)
         content = response.choices[0].message.content or "{}"
+        # Strip markdown code fences if present
+        content = content.strip()
+        if content.startswith("```"):
+            content = content.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
         data = json.loads(content)
         route = data.get("route")
         if route not in {"retrieval_worker", "policy_tool_worker", "human_review"}:
@@ -348,6 +367,8 @@ class SimpleGraph:
             state = human_review_node(state)
             state = retrieval_worker_node(state)
         elif route == "policy_tool_worker":
+            # Retrieval first so policy worker has KB context for analysis
+            state = retrieval_worker_node(state)
             state = policy_tool_worker_node(state)
         else:
             state = retrieval_worker_node(state)

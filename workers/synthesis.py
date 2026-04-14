@@ -17,11 +17,20 @@ SYSTEM_PROMPT = """You are an internal IT Helpdesk and Policy assistant.
 
 Rules:
 1. Answer only from the provided context.
-2. If the context is insufficient, explicitly abstain.
+2. If the context is insufficient, explicitly abstain — do NOT invent information.
 3. Cite important claims inline using [source_name].
 4. If policy exceptions exist, mention them before the conclusion.
 5. Keep the answer concise, structured, and factual.
+6. Do NOT include any <think> or reasoning tags. Output ONLY the final answer.
+7. Answer in Vietnamese when the question is in Vietnamese.
 """
+
+
+def _strip_think_tags(text: str) -> str:
+    """Strip <think>...</think> reasoning blocks from model output."""
+    import re
+    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    return cleaned.strip()
 
 
 def _call_openai_compatible(
@@ -41,7 +50,7 @@ def _call_openai_compatible(
         model=model,
         messages=messages,
         temperature=0.1,
-        max_tokens=500,
+        max_tokens=1024,
     )
     return response.choices[0].message.content or ""
 
@@ -170,7 +179,7 @@ def synthesize(task: str, chunks: list, policy_result: dict, llm_profile: dict) 
         },
     ]
 
-    answer = _call_llm(messages, llm_profile, chunks, policy_result)
+    answer = _strip_think_tags(_call_llm(messages, llm_profile, chunks, policy_result))
     sources = list(dict.fromkeys(chunk.get("source", "unknown") for chunk in chunks))
 
     for source in policy_result.get("source", []):

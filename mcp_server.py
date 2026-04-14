@@ -1,8 +1,7 @@
 import os
-from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, Request
+from starlette.requests import Request
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
 from mcp.types import Tool, TextContent
@@ -189,26 +188,47 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
     except Exception as e:
         return [TextContent(type="text", text=json.dumps({"error": str(e)}))]
 
-
 sse = SseServerTransport("/messages")
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Setup
-    yield
-    # Cleanup
-
-app = FastAPI(title="MCP Server", lifespan=lifespan)
-
-@app.get("/sse")
-async def handle_sse(request: Request):
-    async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
+async def handle_sse(scope, receive, send):
+    """Raw ASGI handler for SSE endpoint."""
+    async with sse.connect_sse(scope, receive, send) as streams:
         await server.run(streams[0], streams[1], server.create_initialization_options())
 
-@app.post("/messages")
-async def handle_messages(request: Request):
-    await sse.handle_post_message(request.scope, request.receive, request._send)
+async def handle_messages(scope, receive, send):
+    """Raw ASGI handler for POST messages endpoint."""
+    await sse.handle_post_message(scope, receive, send)
+
+async def app(scope, receive, send):
+    """Minimal ASGI application that routes /sse and /messages."""
+    if scope["type"] == "lifespan":
+        # Handle lifespan events (startup/shutdown)
+        while True:
+            message = await receive()
+            if message["type"] == "lifespan.startup":
+                await send({"type": "lifespan.startup.complete"})
+            elif message["type"] == "lifespan.shutdown":
+                await send({"type": "lifespan.shutdown.complete"})
+                return
+    
+    path = scope.get("path", "")
+    if path == "/sse":
+        await handle_sse(scope, receive, send)
+    elif path.startswith("/messages"):
+        await handle_messages(scope, receive, send)
+    else:
+        # 404
+        await send({
+            "type": "http.response.start",
+            "status": 404,
+            "headers": [[b"content-type", b"text/plain"]],
+        })
+        await send({
+            "type": "http.response.body",
+            "body": b"Not Found",
+        })
 
 if __name__ == "__main__":
     print("Starting MCP Server on http://127.0.0.1:8082/sse")
     uvicorn.run("mcp_server:app", host="127.0.0.1", port=8082)
+
