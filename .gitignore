@@ -1,0 +1,9 @@
+.kiro/
+.vscode/
+.idea/
+.env
+node_modules/
+pycache/
+venv/
+.venv/
+chroma_db/
