@@ -40,9 +40,8 @@ def _get_embedding_fn():
     model_provider = os.getenv("RETRIEVAL_PROVIDER", "google")
     if model_provider == "google":
         try:
-            import google.generativeai as genai
+            from google import genai
 
-            # Option: Google Gemini (Cần GOOGLE_API_KEY)
             api_key = os.getenv("GOOGLE_API_KEY")
             embedding_model = os.getenv("RETRIEVAL_MODEL", "gemini-embedding-2-preview")
             if api_key:

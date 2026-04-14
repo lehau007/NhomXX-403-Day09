@@ -18,16 +18,30 @@ Gọi độc lập để test:
 
 import os
 
+from dotenv import load_dotenv
+
+load_dotenv()
 WORKER_NAME = "synthesis_worker"
 
-SYSTEM_PROMPT = """Bạn là trợ lý IT Helpdesk nội bộ.
+SYSTEM_PROMPT = """Bạn là Chuyên gia Tổng hợp Thông tin của hệ thống IT Helpdesk & Policy Advisor.
+Nhiệm vụ của bạn là đưa ra câu trả lời cuối cùng chính xác, chuyên nghiệp và có căn cứ dựa trên các tài liệu nội bộ.
+QUY TẮC CỐT LÕI:
+1. TRUNG THỰC TỐI ĐA: Chỉ trả lời dựa trên "TÀI LIỆU THAM KHẢO" và "POLICY EXCEPTIONS" được cung cấp. Tuyệt đối không sử dụng kiến
+thức bên ngoài hoặc tự suy diễn.
+2. XỬ LÝ NGOẠI LỆ (QUAN TRỌNG): Nếu có thông tin trong phần "POLICY EXCEPTIONS", đây là các quy định bắt buộc hoặc ngoại lệ quan
+trọng. Bạn PHẢI đưa các thông tin này vào câu trả lời (thường là ở phần lưu ý hoặc cảnh báo).
+3. TRÍCH DẪN (CITATION): Mọi thông tin quan trọng phải được trích dẫn nguồn ngay sau câu đó dưới dạng [tên_file.txt]. Không trích dẫn
+chung chung ở cuối bài.
+4. TRẠNG THÁI "THIẾU THÔNG TIN": Nếu tài liệu cung cấp không chứa câu trả lời, hãy phản hồi: "Xin lỗi, tôi không tìm thấy thông
+tin cụ thể về vấn đề này trong tài liệu nội bộ của công ty."
 
-Quy tắc nghiêm ngặt:
-1. CHỈ trả lời dựa vào context được cung cấp. KHÔNG dùng kiến thức ngoài.
-2. Nếu context không đủ để trả lời → nói rõ "Không đủ thông tin trong tài liệu nội bộ".
-3. Trích dẫn nguồn cuối mỗi câu quan trọng: [tên_file].
-4. Trả lời súc tích, có cấu trúc. Không dài dòng.
-5. Nếu có exceptions/ngoại lệ → nêu rõ ràng trước khi kết luận.
+CẤU TRÚC CÂU TRẢ LỜI:
+    - Trực diện: Trả lời thẳng vào vấn đề ngay câu đầu tiên.
+    - Chi tiết: Trình bày các bước hoặc điều kiện kèm theo (nếu có).
+    - Lưu ý/Ngoại lệ: Nêu rõ các trường hợp đặc biệt dựa trên Policy.
+    - Nguồn tham khảo: Liệt kê lại các file đã sử dụng ở dưới cùng.
+
+PHONG CÁCH: Chuyên nghiệp, lịch sự, ngắn gọn nhưng đầy đủ ý.
 """
 
 
@@ -36,33 +50,59 @@ def _call_llm(messages: list) -> str:
     Gọi LLM để tổng hợp câu trả lời.
     TODO Sprint 2: Implement với OpenAI hoặc Gemini.
     """
-    # Option A: OpenAI
-    try:
-        from openai import OpenAI
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=messages,
-            temperature=0.1,  # Low temperature để grounded
-            max_tokens=500,
-        )
-        return response.choices[0].message.content
-    except Exception:
-        pass
+    model_provider = os.getenv("SYNTHESIS_PROVIDER", "google").lower()
+    if model_provider == "openai":
+        # Option A: OpenAI
+        try:
+            from openai import OpenAI
 
-    # Option B: Gemini
-    try:
-        import google.generativeai as genai
-        genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        combined = "\n".join([m["content"] for m in messages])
-        response = model.generate_content(combined)
-        return response.text
-    except Exception:
-        pass
+            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            model_name = os.getenv("SYNTHESIS_MODEL", "gpt-4o-mini")
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=messages,
+                temperature=0.1,  # Low temperature để grounded
+                max_tokens=500,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            return f"[SYNTHESIS ERROR] OpenAI: {str(e)}"
+    elif model_provider == "groq":
+        try:
+            from openai import OpenAI
 
-    # Fallback: trả về message báo lỗi (không hallucinate)
-    return "[SYNTHESIS ERROR] Không thể gọi LLM. Kiểm tra API key trong .env."
+            client = OpenAI(api_key=os.getenv("GROQ_API_KEY"), base_url="https://api.groq.com/openai/v1")
+            model_name = os.getenv("SYNTHESIS_MODEL")
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=messages,
+                temperature=0.1,  # Low temperature để grounded
+                max_tokens=500,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            return f"[SYNTHESIS ERROR] OpenAI: {str(e)}"
+    else:
+        # Option B: Gemini
+        try:
+            from google import genai
+
+            api_key = os.getenv("GOOGLE_API_KEY")
+            client = genai.Client(api_key=api_key)
+            model_name = os.getenv("SYNTHESIS_MODEL", "gemini-3.1-flash-lite-preview")
+            user_prompt = messages[-1]["content"]
+            response = client.models.generate_content(
+                model=model_name,
+                contents=user_prompt,
+                config={
+                    "system_instruction": SYSTEM_PROMPT,
+                    "temperature": 0.1,  # Keep it low for factual RAG
+                    "max_output_tokens": 800,
+                },
+            )
+            return response.text
+        except Exception as e:
+            return f"[SYNTHESIS ERROR] Gemini: {str(e)}"
 
 
 def _build_context(chunks: list, policy_result: dict) -> str:
@@ -134,8 +174,8 @@ def synthesize(task: str, chunks: list, policy_result: dict) -> dict:
 
 {context}
 
-Hãy trả lời câu hỏi dựa vào tài liệu trên."""
-        }
+Hãy trả lời câu hỏi dựa vào tài liệu trên.""",
+        },
     ]
 
     answer = _call_llm(messages)
@@ -184,8 +224,7 @@ def run(state: dict) -> dict:
             "confidence": result["confidence"],
         }
         state["history"].append(
-            f"[{WORKER_NAME}] answer generated, confidence={result['confidence']}, "
-            f"sources={result['sources']}"
+            f"[{WORKER_NAME}] answer generated, confidence={result['confidence']}, sources={result['sources']}"
         )
 
     except Exception as e:
