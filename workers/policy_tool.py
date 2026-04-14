@@ -21,7 +21,7 @@ def _call_mcp_tool(tool_name: str, tool_input: dict) -> dict:
         from mcp.client.session import ClientSession
 
         async def _run():
-            async with sse_client("http://127.0.0.1:8000/sse") as streams:
+            async with sse_client("http://127.0.0.1:8082/sse") as streams:
                 async with ClientSession(streams[0], streams[1]) as session:
                     await session.initialize()
                     result = await session.call_tool(tool_name, arguments=tool_input)
@@ -201,6 +201,19 @@ def run(state: dict) -> dict:
             )
 
         policy_result = analyze_policy(task, chunks)
+        
+        # Sprint 3: Add MCP tool results to policy context for synthesis
+        if state.get("mcp_tools_used"):
+            mcp_context = []
+            for mcp in state["mcp_tools_used"]:
+                if mcp.get("output") and not mcp.get("error"):
+                    tool_name = mcp.get("tool")
+                    tool_out = mcp.get("output")
+                    mcp_context.append(f"Tool {tool_name} returned: {tool_out}")
+            
+            if mcp_context:
+                policy_result["mcp_context"] = "\n".join(mcp_context)
+
         state["policy_result"] = policy_result
 
         worker_io["output"] = {
