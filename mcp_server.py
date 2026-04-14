@@ -2,7 +2,7 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
 from mcp.types import Tool, TextContent
@@ -201,20 +201,14 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="MCP Server", lifespan=lifespan)
 
 @app.get("/sse")
-async def handle_sse(request):
-    from starlette.requests import Request
-    if not isinstance(request, Request):
-        request = Request(request.scope, request.receive)
+async def handle_sse(request: Request):
     async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
         await server.run(streams[0], streams[1], server.create_initialization_options())
 
 @app.post("/messages")
-async def handle_messages(request):
-    from starlette.requests import Request
-    if not isinstance(request, Request):
-        request = Request(request.scope, request.receive)
+async def handle_messages(request: Request):
     await sse.handle_post_message(request.scope, request.receive, request._send)
 
 if __name__ == "__main__":
-    print("Starting MCP Server on http://127.0.0.1:8000/sse")
-    uvicorn.run("mcp_server:app", host="127.0.0.1", port=8000)
+    print("Starting MCP Server on http://127.0.0.1:8082/sse")
+    uvicorn.run("mcp_server:app", host="127.0.0.1", port=8082)

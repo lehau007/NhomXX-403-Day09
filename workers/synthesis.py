@@ -73,7 +73,12 @@ def _fallback_answer(chunks: list, policy_result: dict) -> str:
 
 
 def _call_llm(messages: list, llm_profile: dict, chunks: list, policy_result: dict) -> str:
-    if not chunks or policy_result.get("exceptions_found"):
+    # If no chunks and no MCP context and no policy exceptions, then fallback
+    if not chunks and not policy_result.get("exceptions_found") and not policy_result.get("mcp_context"):
+        return _fallback_answer(chunks, policy_result)
+    
+    # If there are policy exceptions but no chunks and no MCP context, fallback
+    if policy_result.get("exceptions_found") and not chunks and not policy_result.get("mcp_context"):
         return _fallback_answer(chunks, policy_result)
 
     provider = llm_profile.get("provider", os.getenv("SYNTHESIS_PROVIDER", "groq")).lower()
@@ -123,6 +128,10 @@ def _build_context(chunks: list, policy_result: dict) -> str:
         parts.append("=== POLICY VERSION NOTE ===")
         parts.append(policy_result["policy_version_note"])
 
+    if policy_result and policy_result.get("mcp_context"):
+        parts.append("=== MCP TOOL EVIDENCE ===")
+        parts.append(policy_result["mcp_context"])
+
     if not parts:
         return "(No context)"
 
@@ -130,13 +139,18 @@ def _build_context(chunks: list, policy_result: dict) -> str:
 
 
 def _estimate_confidence(chunks: list, answer: str, policy_result: dict) -> float:
-    if not chunks:
+    if not chunks and not policy_result.get("mcp_context"):
         return 0.1
 
     if "Khong du thong tin" in answer or "insufficient" in answer.lower():
         return 0.3
 
-    average_score = sum(chunk.get("score", 0) for chunk in chunks) / len(chunks)
+    if chunks:
+        average_score = sum(chunk.get("score", 0) for chunk in chunks) / len(chunks)
+    else:
+        # If we only have MCP context, assume a reasonable confidence
+        average_score = 0.8
+        
     exception_penalty = 0.05 * len(policy_result.get("exceptions_found", []))
     return round(max(0.1, min(0.95, average_score - exception_penalty)), 2)
 

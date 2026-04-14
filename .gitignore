@@ -2,7 +2,7 @@
 .idea/
 .env
 node_modules/
-pycache/
+__pycache__/
 venv/
 .venv/
 chroma_db/
