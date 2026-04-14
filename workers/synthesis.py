@@ -1,6 +1,6 @@
 """
 workers/synthesis.py - Synthesis Worker
-Sprint 2: generate a grounded answer from retrieved chunks and policy results.
+Sprint 2: synthesize a grounded answer from retrieval and policy evidence.
 """
 
 import os
@@ -11,103 +11,25 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-from dotenv import load_dotenv
-
-load_dotenv()
 WORKER_NAME = "synthesis_worker"
 
-SYSTEM_PROMPT = """Bạn là Chuyên gia Tổng hợp Thông tin của hệ thống IT Helpdesk & Policy Advisor.
-Nhiệm vụ của bạn là đưa ra câu trả lời cuối cùng chính xác, chuyên nghiệp và có căn cứ dựa trên các tài liệu nội bộ.
-QUY TẮC CỐT LÕI:
-1. TRUNG THỰC TỐI ĐA: Chỉ trả lời dựa trên "TÀI LIỆU THAM KHẢO" và "POLICY EXCEPTIONS" được cung cấp. Tuyệt đối không sử dụng kiến
-thức bên ngoài hoặc tự suy diễn.
-2. XỬ LÝ NGOẠI LỆ (QUAN TRỌNG): Nếu có thông tin trong phần "POLICY EXCEPTIONS", đây là các quy định bắt buộc hoặc ngoại lệ quan
-trọng. Bạn PHẢI đưa các thông tin này vào câu trả lời (thường là ở phần lưu ý hoặc cảnh báo).
-3. TRÍCH DẪN (CITATION): Mọi thông tin quan trọng phải được trích dẫn nguồn ngay sau câu đó dưới dạng [tên_file.txt]. Không trích dẫn
-chung chung ở cuối bài.
-4. TRẠNG THÁI "THIẾU THÔNG TIN": Nếu tài liệu cung cấp không chứa câu trả lời, hãy phản hồi: "Xin lỗi, tôi không tìm thấy thông
-tin cụ thể về vấn đề này trong tài liệu nội bộ của công ty."
+SYSTEM_PROMPT = """You are an internal IT Helpdesk and Policy assistant.
 
-CẤU TRÚC CÂU TRẢ LỜI:
-    - Trực diện: Trả lời thẳng vào vấn đề ngay câu đầu tiên.
-    - Chi tiết: Trình bày các bước hoặc điều kiện kèm theo (nếu có).
-    - Lưu ý/Ngoại lệ: Nêu rõ các trường hợp đặc biệt dựa trên Policy.
-    - Nguồn tham khảo: Liệt kê lại các file đã sử dụng ở dưới cùng.
-
-PHONG CÁCH: Chuyên nghiệp, lịch sự, ngắn gọn nhưng đầy đủ ý.
-"""
-
-
-def _call_llm(messages: list) -> str:
-    """
-    Gọi LLM để tổng hợp câu trả lời.
-    TODO Sprint 2: Implement với OpenAI hoặc Gemini.
-    """
-    model_provider = os.getenv("SYNTHESIS_PROVIDER", "google").lower()
-    if model_provider == "openai":
-        # Option A: OpenAI
-        try:
-            from openai import OpenAI
-
-            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-            model_name = os.getenv("SYNTHESIS_MODEL", "gpt-4o-mini")
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-                temperature=0.1,  # Low temperature để grounded
-                max_tokens=500,
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            return f"[SYNTHESIS ERROR] OpenAI: {str(e)}"
-    elif model_provider == "groq":
-        try:
-            from openai import OpenAI
-
-            client = OpenAI(api_key=os.getenv("GROQ_API_KEY"), base_url="https://api.groq.com/openai/v1")
-            model_name = os.getenv("SYNTHESIS_MODEL")
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-                temperature=0.1,  # Low temperature để grounded
-                max_tokens=500,
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            return f"[SYNTHESIS ERROR] OpenAI: {str(e)}"
-    else:
-        # Option B: Gemini
-        try:
-            from google import genai
-
-            api_key = os.getenv("GOOGLE_API_KEY")
-            client = genai.Client(api_key=api_key)
-            model_name = os.getenv("SYNTHESIS_MODEL", "gemini-3.1-flash-lite-preview")
-            user_prompt = messages[-1]["content"]
-            response = client.models.generate_content(
-                model=model_name,
-                contents=user_prompt,
-                config={
-                    "system_instruction": SYSTEM_PROMPT,
-                    "temperature": 0.1,  # Keep it low for factual RAG
-                    "max_output_tokens": 800,
-                },
-            )
-            return response.text
-        except Exception as e:
-            return f"[SYNTHESIS ERROR] Gemini: {str(e)}"
-SYSTEM_PROMPT = """You are an internal IT Helpdesk assistant.
-
-Strict rules:
+Rules:
 1. Answer only from the provided context.
-2. If the context is insufficient, clearly abstain.
-3. Cite sources inline using [source_name].
-4. Keep the answer concise and structured.
-5. If policy exceptions exist, mention them before concluding.
+2. If the context is insufficient, explicitly abstain.
+3. Cite important claims inline using [source_name].
+4. If policy exceptions exist, mention them before the conclusion.
+5. Keep the answer concise, structured, and factual.
 """
 
 
-def _call_openai_compatible(messages: list, model: str, api_key: str, base_url: str | None = None) -> str:
+def _call_openai_compatible(
+    messages: list,
+    model: str,
+    api_key: str,
+    base_url: str | None = None,
+) -> str:
     from openai import OpenAI
 
     kwargs = {"api_key": api_key, "timeout": 3.0}
@@ -129,16 +51,16 @@ def _call_google(messages: list, model: str, api_key: str) -> str:
 
     genai.configure(api_key=api_key)
     generator = genai.GenerativeModel(model)
-    combined = "\n".join(message["content"] for message in messages)
-    response = generator.generate_content(combined)
+    prompt = "\n".join(message["content"] for message in messages)
+    response = generator.generate_content(prompt)
     return getattr(response, "text", "") or ""
 
 
-def _fallback_answer(task: str, chunks: list, policy_result: dict) -> str:
+def _fallback_answer(chunks: list, policy_result: dict) -> str:
     if policy_result.get("exceptions_found"):
         first_exception = policy_result["exceptions_found"][0]
         return (
-            "Khong du dieu kien theo ket qua policy hien tai. "
+            "Yeu cau nay bi chan boi policy. "
             f"Ly do: {first_exception.get('rule', '')} "
             f"[{first_exception.get('source', 'unknown')}]"
         )
@@ -146,11 +68,14 @@ def _fallback_answer(task: str, chunks: list, policy_result: dict) -> str:
     if not chunks:
         return "Khong du thong tin trong tai lieu noi bo."
 
-    first_chunk = chunks[0]
-    return f"{first_chunk.get('text', '')} [{first_chunk.get('source', 'unknown')}]"
+    primary_chunk = chunks[0]
+    return f"{primary_chunk.get('text', '')} [{primary_chunk.get('source', 'unknown')}]"
 
 
-def _call_llm(messages: list, llm_profile: dict, task: str, chunks: list, policy_result: dict) -> str:
+def _call_llm(messages: list, llm_profile: dict, chunks: list, policy_result: dict) -> str:
+    if not chunks or policy_result.get("exceptions_found"):
+        return _fallback_answer(chunks, policy_result)
+
     provider = llm_profile.get("provider", os.getenv("SYNTHESIS_PROVIDER", "groq")).lower()
     model = llm_profile.get("model", os.getenv("SYNTHESIS_MODEL", "openai/gpt-oss-120b"))
 
@@ -173,7 +98,7 @@ def _call_llm(messages: list, llm_profile: dict, task: str, chunks: list, policy
     except Exception as error:
         print(f"Warning: synthesis LLM call failed: {error}")
 
-    return _fallback_answer(task, chunks, policy_result)
+    return _fallback_answer(chunks, policy_result)
 
 
 def _build_context(chunks: list, policy_result: dict) -> str:
@@ -190,7 +115,13 @@ def _build_context(chunks: list, policy_result: dict) -> str:
     if policy_result and policy_result.get("exceptions_found"):
         parts.append("=== POLICY EXCEPTIONS ===")
         for exception in policy_result["exceptions_found"]:
-            parts.append(f"- {exception.get('rule', '')}")
+            parts.append(
+                f"- {exception.get('rule', '')} [{exception.get('source', 'unknown')}]"
+            )
+
+    if policy_result and policy_result.get("policy_version_note"):
+        parts.append("=== POLICY VERSION NOTE ===")
+        parts.append(policy_result["policy_version_note"])
 
     if not parts:
         return "(No context)"
@@ -216,20 +147,21 @@ def synthesize(task: str, chunks: list, policy_result: dict, llm_profile: dict) 
         {"role": "system", "content": SYSTEM_PROMPT},
         {
             "role": "user",
-            "content": f"""Câu hỏi: {task}
-
-{context}
-
-Hãy trả lời câu hỏi dựa vào tài liệu trên.""",
+            "content": (
+                f"Question: {task}\n\n"
+                f"{context}\n\n"
+                "Answer only from the evidence above. "
+                "Use inline citations in the format [source_name]."
+            ),
         },
     ]
 
-    answer = _call_llm(messages, llm_profile, task, chunks, policy_result)
+    answer = _call_llm(messages, llm_profile, chunks, policy_result)
     sources = list(dict.fromkeys(chunk.get("source", "unknown") for chunk in chunks))
-    if policy_result.get("source"):
-        for source in policy_result["source"]:
-            if source not in sources:
-                sources.append(source)
+
+    for source in policy_result.get("source", []):
+        if source not in sources:
+            sources.append(source)
 
     return {
         "answer": answer,

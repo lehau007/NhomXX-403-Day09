@@ -1,225 +1,220 @@
-"""
-mcp_server.py — Standardized MCP Server
-Refactored based on review for Sprint 1/3.
-
-Features:
-    - Standardized Tool Registry.
-    - Mock data loaded from JSON files.
-    - Fixed duplicate search logic.
-    - Ready for MCP Protocol integration.
-"""
-
 import os
+from contextlib import asynccontextmanager
+from typing import Any
+
+from fastapi import FastAPI
+from mcp.server import Server
+from mcp.server.sse import SseServerTransport
+from mcp.types import Tool, TextContent
+import uvicorn
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, List, Optional
 
-# ─────────────────────────────────────────────
-# Path Configuration
-# ─────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
+DOCS_DIR = BASE_DIR / "data" / "docs"
 DATA_DIR = BASE_DIR / "data" / "mcp"
 MOCK_TICKETS_FILE = DATA_DIR / "mock_tickets.json"
 ACCESS_RULES_FILE = DATA_DIR / "access_rules.json"
 
-# ─────────────────────────────────────────────
-# Data Loading
-# ─────────────────────────────────────────────
 def load_json(file_path: Path) -> dict:
     if not file_path.exists():
-        print(f"⚠️  Warning: {file_path} not found. Using empty mock data.")
+        print(f"Warning: {file_path} not found. Using empty mock data.")
         return {}
-    with open(file_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    with open(file_path, "r", encoding="utf-8") as file:
+        return json.load(file)
 
 MOCK_TICKETS = load_json(MOCK_TICKETS_FILE)
 ACCESS_RULES = load_json(ACCESS_RULES_FILE)
 
-# ─────────────────────────────────────────────
-# Tool Implementations
-# ─────────────────────────────────────────────
+server = Server("my-mcp-server")
 
-def tool_search_kb(query: str, top_k: int = 3) -> dict:
-    """
-    Tìm kiếm Knowledge Base bằng semantic search thông qua retrieval worker.
-    """
+@server.list_tools()
+async def handle_list_tools() -> list[Tool]:
+    return [
+        Tool(
+            name="search_kb",
+            description="Tim kiem Knowledge Base noi bo.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "top_k": {"type": "integer", "default": 3},
+                },
+                "required": ["query"],
+            },
+        ),
+        Tool(
+            name="get_ticket_info",
+            description="Tra cuu thong tin ticket.",
+            inputSchema={
+                "type": "object",
+                "properties": {"ticket_id": {"type": "string"}},
+                "required": ["ticket_id"],
+            },
+        ),
+        Tool(
+            name="check_access_permission",
+            description="Kiem tra quyen truy cap.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "access_level": {"type": "integer"},
+                    "requester_role": {"type": "string"},
+                    "is_emergency": {"type": "boolean", "default": False},
+                },
+                "required": ["access_level", "requester_role"],
+            },
+        ),
+        Tool(
+            name="create_ticket",
+            description="Tao ticket moi.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"]},
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                },
+                "required": ["priority", "title"],
+            },
+        )
+    ]
+
+@server.call_tool()
+async def handle_call_tool(name: str, arguments: dict | None) -> list[TextContent]:
+    if not arguments:
+        arguments = {}
+        
     try:
-        from workers.retrieval import retrieve_dense
-        chunks = retrieve_dense(query, top_k=top_k)
-        sources = list({c["source"] for c in chunks})
-        return {
-            "chunks": chunks,
-            "sources": sources,
-            "total_found": len(chunks),
-        }
+        if name == "search_kb":
+            query = arguments.get("query", "")
+            top_k = arguments.get("top_k", 3)
+            query_terms = [term for term in query.lower().split() if len(term) > 2]
+            scored_chunks = []
+
+            if DOCS_DIR.exists():
+                for file_path in DOCS_DIR.glob("*.txt"):
+                    text = file_path.read_text(encoding="utf-8")
+                    lowered = text.lower()
+                    hits = sum(lowered.count(term) for term in query_terms)
+                    if hits <= 0:
+                        continue
+                    snippet = text[:700].strip()
+                    score = min(0.99, 0.3 + hits * 0.1)
+                    scored_chunks.append(
+                        {
+                            "text": snippet,
+                            "source": file_path.name,
+                            "score": round(score, 4),
+                            "metadata": {"match_count": hits},
+                        }
+                    )
+
+            scored_chunks.sort(key=lambda chunk: chunk["score"], reverse=True)
+            chunks = scored_chunks[:top_k]
+            sources = list(dict.fromkeys(chunk["source"] for chunk in chunks))
+            
+            result = {
+                "chunks": chunks,
+                "sources": sources,
+                "total_found": len(chunks),
+            }
+            return [TextContent(type="text", text=json.dumps(result))]
+
+        elif name == "get_ticket_info":
+            ticket_id = arguments.get("ticket_id", "")
+            ticket = MOCK_TICKETS.get(ticket_id.upper())
+            if ticket:
+                result = ticket
+            else:
+                result = {
+                    "error": f"Ticket '{ticket_id}' khong tim thay.",
+                    "available_ids": list(MOCK_TICKETS.keys()),
+                }
+            return [TextContent(type="text", text=json.dumps(result))]
+
+        elif name == "check_access_permission":
+            access_level = arguments.get("access_level")
+            requester_role = arguments.get("requester_role")
+            is_emergency = arguments.get("is_emergency", False)
+            
+            rule = ACCESS_RULES.get(str(access_level))
+            if not rule:
+                result = {"error": f"Access level {access_level} khong hop le."}
+            else:
+                can_grant = True
+                notes = []
+
+                if is_emergency and rule.get("emergency_can_bypass"):
+                    notes.append(rule.get("emergency_bypass_note", ""))
+                elif is_emergency and not rule.get("emergency_can_bypass"):
+                    notes.append(f"Level {access_level} khong co emergency bypass.")
+                    if access_level == 3:
+                        can_grant = False
+
+                result = {
+                    "access_level": access_level,
+                    "requester_role": requester_role,
+                    "can_grant": can_grant,
+                    "required_approvers": rule.get("required_approvers", []),
+                    "emergency_override": is_emergency and rule.get("emergency_can_bypass", False),
+                    "notes": notes,
+                    "source": "access_control_sop.txt",
+                }
+            return [TextContent(type="text", text=json.dumps(result))]
+
+        elif name == "create_ticket":
+            priority = arguments.get("priority", "P3")
+            title = arguments.get("title", "")
+            description = arguments.get("description", "")
+            
+            ticket_id = f"IT-{9900 + abs(hash(title)) % 99}"
+            ticket = {
+                "ticket_id": ticket_id,
+                "priority": priority,
+                "title": title,
+                "description": description,
+                "status": "open",
+                "created_at": datetime.now().isoformat(),
+                "url": f"https://jira.company.internal/browse/{ticket_id}",
+            }
+            MOCK_TICKETS[ticket_id] = ticket
+            result = ticket
+            return [TextContent(type="text", text=json.dumps(result))]
+
+        else:
+            return [TextContent(type="text", text=json.dumps({"error": f"Tool '{name}' not found."}))]
+
     except Exception as e:
-        return {
-            "error": f"Search failed: {e}",
-            "chunks": [],
-            "sources": [],
-            "total_found": 0
-        }
+        return [TextContent(type="text", text=json.dumps({"error": str(e)}))]
 
-def tool_get_ticket_info(ticket_id: str) -> dict:
-    """
-    Tra cứu thông tin ticket từ mock data.
-    """
-    ticket = MOCK_TICKETS.get(ticket_id.upper())
-    if ticket:
-        return ticket
-    return {
-        "error": f"Ticket '{ticket_id}' không tìm thấy.",
-        "available_ids": list(MOCK_TICKETS.keys())
-    }
 
-def tool_check_access_permission(access_level: int, requester_role: str, is_emergency: bool = False) -> dict:
-    """
-    Kiểm tra quyền truy cập theo quy định.
-    """
-    rule = ACCESS_RULES.get(str(access_level))
-    if not rule:
-        return {"error": f"Access level {access_level} không hợp lệ."}
+sse = SseServerTransport("/messages")
 
-    can_grant = True
-    notes = []
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Setup
+    yield
+    # Cleanup
 
-    if is_emergency and rule.get("emergency_can_bypass"):
-        notes.append(rule.get("emergency_bypass_note", ""))
-    elif is_emergency and not rule.get("emergency_can_bypass"):
-        notes.append(f"Level {access_level} KHÔNG có emergency bypass.")
-        can_grant = False if access_level == 3 else True # Demo logic
+app = FastAPI(title="MCP Server", lifespan=lifespan)
 
-    return {
-        "access_level": access_level,
-        "can_grant": can_grant,
-        "required_approvers": rule["required_approvers"],
-        "emergency_override": is_emergency and rule.get("emergency_can_bypass", False),
-        "notes": notes,
-        "source": "access_control_sop.txt"
-    }
+@app.get("/sse")
+async def handle_sse(request):
+    from starlette.requests import Request
+    if not isinstance(request, Request):
+        request = Request(request.scope, request.receive)
+    async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
+        await server.run(streams[0], streams[1], server.create_initialization_options())
 
-def tool_create_ticket(priority: str, title: str, description: str = "") -> dict:
-    """
-    Tạo ticket mới (Mock).
-    """
-    mock_id = f"IT-{9900 + hash(title) % 99}"
-    ticket = {
-        "ticket_id": mock_id,
-        "priority": priority,
-        "title": title,
-        "status": "open",
-        "created_at": datetime.now().isoformat(),
-        "url": f"https://jira.company.internal/browse/{mock_id}"
-    }
-    MOCK_TICKETS[mock_id] = ticket
-    return ticket
-
-# ─────────────────────────────────────────────
-# Dispatcher Layer
-# ─────────────────────────────────────────────
-
-TOOL_REGISTRY = {
-    "search_kb": tool_search_kb,
-    "get_ticket_info": tool_get_ticket_info,
-    "check_access_permission": tool_check_access_permission,
-    "create_ticket": tool_create_ticket,
-}
-
-TOOL_SCHEMAS = {
-    "search_kb": {
-        "name": "search_kb",
-        "description": "Tìm kiếm Knowledge Base nội bộ.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string"},
-                "top_k": {"type": "integer", "default": 3}
-            },
-            "required": ["query"]
-        }
-    },
-    "get_ticket_info": {
-        "name": "get_ticket_info",
-        "description": "Tra cứu thông tin ticket Jira.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {"ticket_id": {"type": "string"}},
-            "required": ["ticket_id"]
-        }
-    },
-    "check_access_permission": {
-        "name": "check_access_permission",
-        "description": "Kiểm tra quyền truy cập.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "access_level": {"type": "integer"},
-                "requester_role": {"type": "string"},
-                "is_emergency": {"type": "boolean", "default": False}
-            },
-            "required": ["access_level", "requester_role"]
-        }
-    },
-    "create_ticket": {
-        "name": "create_ticket",
-        "description": "Tạo ticket Jira mới.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"]},
-                "title": {"type": "string"},
-                "description": {"type": "string"}
-            },
-            "required": ["priority", "title"]
-        }
-    }
-}
-
-def list_tools():
-    return list(TOOL_SCHEMAS.values())
-
-def dispatch_tool(tool_name: str, tool_input: dict) -> dict:
-    if tool_name not in TOOL_REGISTRY:
-        return {"error": f"Tool '{tool_name}' not found."}
-    
-    try:
-        return TOOL_REGISTRY[tool_name](**tool_input)
-    except Exception as e:
-        return {"error": str(e)}
-
-# ─────────────────────────────────────────────
-# FastAPI Entry Point (Advanced Mode)
-# ─────────────────────────────────────────────
-
-try:
-    from fastapi import FastAPI, HTTPException
-    from pydantic import BaseModel
-    import uvicorn
-
-    app = FastAPI(title="MCP Server")
-
-    class ToolCallRequest(BaseModel):
-        tool_name: str
-        tool_input: Dict[str, Any]
-
-    @app.get("/tools")
-    def get_tools():
-        return {"tools": list_tools()}
-
-    @app.post("/tools/call")
-    def call_tool(request: ToolCallRequest):
-        result = dispatch_tool(request.tool_name, request.tool_input)
-        return {"status": "success" if "error" not in result else "error", "output": result}
-
-except ImportError:
-    app = None
+@app.post("/messages")
+async def handle_messages(request):
+    from starlette.requests import Request
+    if not isinstance(request, Request):
+        request = Request(request.scope, request.receive)
+    await sse.handle_post_message(request.scope, request.receive, request._send)
 
 if __name__ == "__main__":
-    if app:
-        print("🚀 Starting MCP Server on http://127.0.0.1:8000")
-        uvicorn.run(app, host="127.0.0.1", port=8000)
-    else:
-        print("⚠️ FastAPI or Uvicorn not installed. Running in standalone test mode.")
-        # Test search
-        print(dispatch_tool("get_ticket_info", {"ticket_id": "P1-LATEST"}))
+    print("Starting MCP Server on http://127.0.0.1:8000/sse")
+    uvicorn.run("mcp_server:app", host="127.0.0.1", port=8000)
