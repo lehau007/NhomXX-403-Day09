@@ -1,164 +1,171 @@
 """
-workers/synthesis.py — Synthesis Worker
-Sprint 2: Tổng hợp câu trả lời từ retrieved_chunks và policy_result.
-
-Input (từ AgentState):
-    - task: câu hỏi
-    - retrieved_chunks: evidence từ retrieval_worker
-    - policy_result: kết quả từ policy_tool_worker
-
-Output (vào AgentState):
-    - final_answer: câu trả lời cuối với citation
-    - sources: danh sách nguồn tài liệu được cite
-    - confidence: mức độ tin cậy (0.0 - 1.0)
-
-Gọi độc lập để test:
-    python workers/synthesis.py
+workers/synthesis.py - Synthesis Worker
+Sprint 2: generate a grounded answer from retrieved chunks and policy results.
 """
 
 import os
 
+from dotenv import load_dotenv
+
+
+load_dotenv()
+
+
 WORKER_NAME = "synthesis_worker"
 
-SYSTEM_PROMPT = """Bạn là trợ lý IT Helpdesk nội bộ.
+SYSTEM_PROMPT = """You are an internal IT Helpdesk assistant.
 
-Quy tắc nghiêm ngặt:
-1. CHỈ trả lời dựa vào context được cung cấp. KHÔNG dùng kiến thức ngoài.
-2. Nếu context không đủ để trả lời → nói rõ "Không đủ thông tin trong tài liệu nội bộ".
-3. Trích dẫn nguồn cuối mỗi câu quan trọng: [tên_file].
-4. Trả lời súc tích, có cấu trúc. Không dài dòng.
-5. Nếu có exceptions/ngoại lệ → nêu rõ ràng trước khi kết luận.
+Strict rules:
+1. Answer only from the provided context.
+2. If the context is insufficient, clearly abstain.
+3. Cite sources inline using [source_name].
+4. Keep the answer concise and structured.
+5. If policy exceptions exist, mention them before concluding.
 """
 
 
-def _call_llm(messages: list) -> str:
-    """
-    Gọi LLM để tổng hợp câu trả lời.
-    TODO Sprint 2: Implement với OpenAI hoặc Gemini.
-    """
-    # Option A: OpenAI
-    try:
-        from openai import OpenAI
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=messages,
-            temperature=0.1,  # Low temperature để grounded
-            max_tokens=500,
+def _call_openai_compatible(messages: list, model: str, api_key: str, base_url: str | None = None) -> str:
+    from openai import OpenAI
+
+    kwargs = {"api_key": api_key, "timeout": 3.0}
+    if base_url:
+        kwargs["base_url"] = base_url
+
+    client = OpenAI(**kwargs)
+    response = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=0.1,
+        max_tokens=500,
+    )
+    return response.choices[0].message.content or ""
+
+
+def _call_google(messages: list, model: str, api_key: str) -> str:
+    import google.generativeai as genai
+
+    genai.configure(api_key=api_key)
+    generator = genai.GenerativeModel(model)
+    combined = "\n".join(message["content"] for message in messages)
+    response = generator.generate_content(combined)
+    return getattr(response, "text", "") or ""
+
+
+def _fallback_answer(task: str, chunks: list, policy_result: dict) -> str:
+    if policy_result.get("exceptions_found"):
+        first_exception = policy_result["exceptions_found"][0]
+        return (
+            "Khong du dieu kien theo ket qua policy hien tai. "
+            f"Ly do: {first_exception.get('rule', '')} "
+            f"[{first_exception.get('source', 'unknown')}]"
         )
-        return response.choices[0].message.content
-    except Exception:
-        pass
 
-    # Option B: Gemini
+    if not chunks:
+        return "Khong du thong tin trong tai lieu noi bo."
+
+    first_chunk = chunks[0]
+    return f"{first_chunk.get('text', '')} [{first_chunk.get('source', 'unknown')}]"
+
+
+def _call_llm(messages: list, llm_profile: dict, task: str, chunks: list, policy_result: dict) -> str:
+    provider = llm_profile.get("provider", os.getenv("SYNTHESIS_PROVIDER", "groq")).lower()
+    model = llm_profile.get("model", os.getenv("SYNTHESIS_MODEL", "openai/gpt-oss-120b"))
+
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        combined = "\n".join([m["content"] for m in messages])
-        response = model.generate_content(combined)
-        return response.text
-    except Exception:
-        pass
+        if provider == "groq":
+            api_key = os.getenv("GROQ_API_KEY")
+            if api_key:
+                base_url = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
+                return _call_openai_compatible(messages, model, api_key, base_url=base_url)
 
-    # Fallback: trả về message báo lỗi (không hallucinate)
-    return "[SYNTHESIS ERROR] Không thể gọi LLM. Kiểm tra API key trong .env."
+        if provider == "openai":
+            api_key = os.getenv("OPENAI_API_KEY")
+            if api_key:
+                return _call_openai_compatible(messages, model, api_key)
+
+        if provider == "google":
+            api_key = os.getenv("GOOGLE_API_KEY")
+            if api_key:
+                return _call_google(messages, model, api_key)
+    except Exception as error:
+        print(f"Warning: synthesis LLM call failed: {error}")
+
+    return _fallback_answer(task, chunks, policy_result)
 
 
 def _build_context(chunks: list, policy_result: dict) -> str:
-    """Xây dựng context string từ chunks và policy result."""
     parts = []
 
     if chunks:
-        parts.append("=== TÀI LIỆU THAM KHẢO ===")
-        for i, chunk in enumerate(chunks, 1):
+        parts.append("=== EVIDENCE ===")
+        for index, chunk in enumerate(chunks, start=1):
             source = chunk.get("source", "unknown")
             text = chunk.get("text", "")
-            score = chunk.get("score", 0)
-            parts.append(f"[{i}] Nguồn: {source} (relevance: {score:.2f})\n{text}")
+            score = chunk.get("score", 0.0)
+            parts.append(f"[{index}] Source: {source} (relevance={score:.2f})\n{text}")
 
     if policy_result and policy_result.get("exceptions_found"):
-        parts.append("\n=== POLICY EXCEPTIONS ===")
-        for ex in policy_result["exceptions_found"]:
-            parts.append(f"- {ex.get('rule', '')}")
+        parts.append("=== POLICY EXCEPTIONS ===")
+        for exception in policy_result["exceptions_found"]:
+            parts.append(f"- {exception.get('rule', '')}")
 
     if not parts:
-        return "(Không có context)"
+        return "(No context)"
 
     return "\n\n".join(parts)
 
 
 def _estimate_confidence(chunks: list, answer: str, policy_result: dict) -> float:
-    """
-    Ước tính confidence dựa vào:
-    - Số lượng và quality của chunks
-    - Có exceptions không
-    - Answer có abstain không
-
-    TODO Sprint 2: Có thể dùng LLM-as-Judge để tính confidence chính xác hơn.
-    """
     if not chunks:
-        return 0.1  # Không có evidence → low confidence
+        return 0.1
 
-    if "Không đủ thông tin" in answer or "không có trong tài liệu" in answer.lower():
-        return 0.3  # Abstain → moderate-low
+    if "Khong du thong tin" in answer or "insufficient" in answer.lower():
+        return 0.3
 
-    # Weighted average của chunk scores
-    if chunks:
-        avg_score = sum(c.get("score", 0) for c in chunks) / len(chunks)
-    else:
-        avg_score = 0
-
-    # Penalty nếu có exceptions (phức tạp hơn)
+    average_score = sum(chunk.get("score", 0) for chunk in chunks) / len(chunks)
     exception_penalty = 0.05 * len(policy_result.get("exceptions_found", []))
-
-    confidence = min(0.95, avg_score - exception_penalty)
-    return round(max(0.1, confidence), 2)
+    return round(max(0.1, min(0.95, average_score - exception_penalty)), 2)
 
 
-def synthesize(task: str, chunks: list, policy_result: dict) -> dict:
-    """
-    Tổng hợp câu trả lời từ chunks và policy context.
-
-    Returns:
-        {"answer": str, "sources": list, "confidence": float}
-    """
+def synthesize(task: str, chunks: list, policy_result: dict, llm_profile: dict) -> dict:
     context = _build_context(chunks, policy_result)
-
-    # Build messages
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {
             "role": "user",
-            "content": f"""Câu hỏi: {task}
-
-{context}
-
-Hãy trả lời câu hỏi dựa vào tài liệu trên."""
-        }
+            "content": f"Question: {task}\n\n{context}\n\nAnswer only from the evidence above.",
+        },
     ]
 
-    answer = _call_llm(messages)
-    sources = list({c.get("source", "unknown") for c in chunks})
-    confidence = _estimate_confidence(chunks, answer, policy_result)
+    answer = _call_llm(messages, llm_profile, task, chunks, policy_result)
+    sources = list(dict.fromkeys(chunk.get("source", "unknown") for chunk in chunks))
+    if policy_result.get("source"):
+        for source in policy_result["source"]:
+            if source not in sources:
+                sources.append(source)
 
     return {
         "answer": answer,
         "sources": sources,
-        "confidence": confidence,
+        "confidence": _estimate_confidence(chunks, answer, policy_result),
     }
 
 
 def run(state: dict) -> dict:
-    """
-    Worker entry point — gọi từ graph.py.
-    """
     task = state.get("task", "")
     chunks = state.get("retrieved_chunks", [])
     policy_result = state.get("policy_result", {})
+    llm_profile = state.get("llm_profiles", {}).get(
+        "synthesis",
+        {
+            "provider": os.getenv("SYNTHESIS_PROVIDER", "groq"),
+            "model": os.getenv("SYNTHESIS_MODEL", "openai/gpt-oss-120b"),
+        },
+    )
 
     state.setdefault("workers_called", [])
     state.setdefault("history", [])
+    state.setdefault("worker_io_logs", [])
     state["workers_called"].append(WORKER_NAME)
 
     worker_io = {
@@ -167,13 +174,14 @@ def run(state: dict) -> dict:
             "task": task,
             "chunks_count": len(chunks),
             "has_policy": bool(policy_result),
+            "llm_profile": llm_profile,
         },
         "output": None,
         "error": None,
     }
 
     try:
-        result = synthesize(task, chunks, policy_result)
+        result = synthesize(task, chunks, policy_result, llm_profile)
         state["final_answer"] = result["answer"]
         state["sources"] = result["sources"]
         state["confidence"] = result["confidence"]
@@ -184,63 +192,36 @@ def run(state: dict) -> dict:
             "confidence": result["confidence"],
         }
         state["history"].append(
-            f"[{WORKER_NAME}] answer generated, confidence={result['confidence']}, "
-            f"sources={result['sources']}"
+            f"[{WORKER_NAME}] answer generated, confidence={result['confidence']}, sources={result['sources']}"
         )
-
-    except Exception as e:
-        worker_io["error"] = {"code": "SYNTHESIS_FAILED", "reason": str(e)}
-        state["final_answer"] = f"SYNTHESIS_ERROR: {e}"
+    except Exception as error:
+        state["final_answer"] = f"SYNTHESIS_ERROR: {error}"
         state["confidence"] = 0.0
-        state["history"].append(f"[{WORKER_NAME}] ERROR: {e}")
+        worker_io["error"] = {
+            "code": "SYNTHESIS_FAILED",
+            "reason": str(error),
+        }
+        state["history"].append(f"[{WORKER_NAME}] ERROR: {error}")
 
-    state.setdefault("worker_io_logs", []).append(worker_io)
+    state["worker_io_logs"].append(worker_io)
     return state
 
 
-# ─────────────────────────────────────────────
-# Test độc lập
-# ─────────────────────────────────────────────
-
 if __name__ == "__main__":
     print("=" * 50)
-    print("Synthesis Worker — Standalone Test")
+    print("Synthesis Worker - Standalone Test")
     print("=" * 50)
 
     test_state = {
-        "task": "SLA ticket P1 là bao lâu?",
+        "task": "SLA ticket P1 la bao lau?",
         "retrieved_chunks": [
             {
-                "text": "Ticket P1: Phản hồi ban đầu 15 phút kể từ khi ticket được tạo. Xử lý và khắc phục 4 giờ. Escalation: tự động escalate lên Senior Engineer nếu không có phản hồi trong 10 phút.",
+                "text": "Ticket P1 requires an initial response within 15 minutes and resolution within 4 hours.",
                 "source": "sla_p1_2026.txt",
                 "score": 0.92,
             }
         ],
         "policy_result": {},
     }
-
-    result = run(test_state.copy())
-    print(f"\nAnswer:\n{result['final_answer']}")
-    print(f"\nSources: {result['sources']}")
-    print(f"Confidence: {result['confidence']}")
-
-    print("\n--- Test 2: Exception case ---")
-    test_state2 = {
-        "task": "Khách hàng Flash Sale yêu cầu hoàn tiền vì lỗi nhà sản xuất.",
-        "retrieved_chunks": [
-            {
-                "text": "Ngoại lệ: Đơn hàng Flash Sale không được hoàn tiền theo Điều 3 chính sách v4.",
-                "source": "policy_refund_v4.txt",
-                "score": 0.88,
-            }
-        ],
-        "policy_result": {
-            "policy_applies": False,
-            "exceptions_found": [{"type": "flash_sale_exception", "rule": "Flash Sale không được hoàn tiền."}],
-        },
-    }
-    result2 = run(test_state2.copy())
-    print(f"\nAnswer:\n{result2['final_answer']}")
-    print(f"Confidence: {result2['confidence']}")
-
-    print("\n✅ synthesis_worker test done.")
+    result = run(test_state)
+    print(result["final_answer"])
