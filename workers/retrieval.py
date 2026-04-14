@@ -28,7 +28,7 @@ def _get_embedding_fn():
 
     if provider == "google":
         try:
-            import google.generativeai as genai
+            from google import genai
 
             api_key = os.getenv("GOOGLE_API_KEY")
             if api_key:
