@@ -166,8 +166,8 @@ policy_tool_worker:
     - "Phải ghi tên MCP tool đã gọi vào mcp_tools_used"
     - "Không được tự bịa policy rules không có trong tài liệu"
   actual_implementation:
-    status: "TODO Sprint 2"
-    notes: ""
+    status: "done"
+    notes: "Implemented rule-based policy analysis with exception detection (Flash Sale, Digital, Activated) and MCP tool integration (search_kb, get_ticket_info, check_access_permission)."
 
 # ─────────────────────────────────────────────
 # Synthesis Worker
