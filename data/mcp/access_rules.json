@@ -1,0 +1,18 @@
+{
+    "1": {
+        "required_approvers": ["Line Manager"],
+        "emergency_can_bypass": false,
+        "note": "Standard user access"
+    },
+    "2": {
+        "required_approvers": ["Line Manager", "IT Admin"],
+        "emergency_can_bypass": true,
+        "emergency_bypass_note": "Level 2 có thể cấp tạm thời với approval đồng thời của Line Manager và IT Admin on-call.",
+        "note": "Elevated access"
+    },
+    "3": {
+        "required_approvers": ["Line Manager", "IT Admin", "IT Security"],
+        "emergency_can_bypass": false,
+        "note": "Admin access — không có emergency bypass"
+    }
+}
