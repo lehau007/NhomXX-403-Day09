@@ -20,6 +20,63 @@ Trong hệ thống Multi-Agent, không nên chỉ dùng một model cố định
 - **Policy/Retrieval Worker:** Dùng **Google (Gemini)** cho vector embedding (`gemini-embedding-2-preview`) hoặc các model chuyên dụng giá rẻ.
 - **Quy tắc Bắt Buộc:** **KHÔNG ĐƯỢC HARDCODE** model name hay API key vào trong code của Worker. Tất cả cấu hình này phải lấy từ biến môi trường (`os.getenv("SUPERVISOR_MODEL")`, `os.getenv("GROQ_API_KEY")`, v.v.).
 
+### 1.4 Kiến trúc Hệ thống (System Architecture)
+Mô hình Supervisor-Worker giúp tách biệt khả năng suy luận (Reasoning) và thực thi (Execution):
+
+```text
+       [ User Request ]
+              │
+              ▼
+      ┌──────────────┐
+      │  Supervisor  │ (Phân loại Task, Đánh giá Rủi ro, Quyết định Route)
+      └──────┬───────┘
+             │
+      ┌──────┴─────────────────────────────────┐
+      │             [ Route Decision ]         │
+      ▼                      ▼                 ▼
+[ Retrieval Worker ]  [ Policy Worker ]  [ Human Review ]
+ (Tra cứu Knowledge)   (Kiểm tra Policy)  (HITL - Chờ duyệt)
+      │             (Gọi MCP Tool Call)        │
+      └──────────────┬─────────────────────────┘
+                     │
+                     ▼
+           [ Synthesis Worker ] (Tổng hợp Answer + Trích dẫn Source)
+                     │
+                     ▼
+              [ Final Output ]
+```
+
+### 1.5 Cấu trúc Thư mục Dự án (Project Structure)
+Để đảm bảo tính modular, dự án được tổ chức theo cấu trúc sau:
+
+```text
+lab/
+├── graph.py                # File chính: Chứa Supervisor logic & StateGraph
+├── eval_trace.py           # Script đánh giá: Chạy test questions & tính metrics
+├── mcp_server.py           # MCP Server: Cung cấp các công cụ (tools) cho Worker
+├── requirements.txt        # Danh sách thư viện cần thiết
+├── .env                    # Biến môi trường (API Keys, Model Config) - KHÔNG COMMIT
+│
+├── workers/                # Thư mục chứa các Worker chuyên trách
+│   ├── retrieval.py        # Worker tra cứu dữ liệu từ Knowledge Base
+│   ├── policy_tool.py      # Worker kiểm tra chính sách & gọi MCP tools
+│   └── synthesis.py        # Worker tổng hợp câu trả lời cuối cùng
+│
+├── contracts/              # Định nghĩa "Hợp đồng" dữ liệu
+│   └── worker_contracts.yaml # Quy định format I/O cho từng Worker
+│
+├── data/                   # Dữ liệu đầu vào
+│   ├── docs/               # Knowledge Base (txt, pdf)
+│   └── test_questions.json # Bộ câu hỏi kiểm thử (Sprint 4)
+│
+├── artifacts/              # Kết quả đầu ra của hệ thống
+│   └── traces/             # Chứa trace log JSON của từng câu hỏi
+│
+└── docs/                   # Tài liệu thiết kế & báo cáo
+    ├── system_architecture.md
+    └── routing_decisions.md
+```
+
 ---
 
 ## 2. Quy ước Coding (Coding Standards)
