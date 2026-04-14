@@ -1,0 +1,28 @@
+{
+    "P1-LATEST": {
+        "ticket_id": "IT-9847",
+        "priority": "P1",
+        "title": "API Gateway down — toàn bộ người dùng không đăng nhập được",
+        "status": "in_progress",
+        "assignee": "nguyen.van.a@company.internal",
+        "created_at": "2026-04-13T22:47:00",
+        "sla_deadline": "2026-04-14T02:47:00",
+        "escalated": true,
+        "escalated_to": "senior_engineer_team",
+        "notifications_sent": [
+            "slack:#incident-p1",
+            "email:incident@company.internal",
+            "pagerduty:oncall"
+        ]
+    },
+    "IT-1234": {
+        "ticket_id": "IT-1234",
+        "priority": "P2",
+        "title": "Feature login chậm cho một số user",
+        "status": "open",
+        "assignee": null,
+        "created_at": "2026-04-13T09:15:00",
+        "sla_deadline": "2026-04-14T09:15:00",
+        "escalated": false
+    }
+}

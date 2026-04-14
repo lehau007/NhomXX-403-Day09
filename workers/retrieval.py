@@ -1,31 +1,14 @@
 """
-workers/retrieval.py — Retrieval Worker
-Sprint 2: Implement retrieval từ ChromaDB, trả về chunks + sources.
-
-Input (từ AgentState):
-    - task: câu hỏi cần retrieve
-    - (optional) retrieved_chunks nếu đã có từ trước
-
-Output (vào AgentState):
-    - retrieved_chunks: list of {"text", "source", "score", "metadata"}
-    - retrieved_sources: list of source filenames
-    - worker_io_log: log input/output của worker này
-
-Gọi độc lập để test:
-    python workers/retrieval.py
+workers/retrieval.py - Retrieval Worker
+Sprint 2: retrieve evidence from ChromaDB and return chunks + sources.
 """
 
 import os
 
 from dotenv import load_dotenv
 
-load_dotenv()
 
-# ─────────────────────────────────────────────
-# Worker Contract (xem contracts/worker_contracts.yaml)
-# Input:  {"task": str, "top_k": int = 3}
-# Output: {"retrieved_chunks": list, "retrieved_sources": list, "error": dict | None}
-# ─────────────────────────────────────────────
+load_dotenv()
 
 
 WORKER_NAME = "retrieval_worker"
@@ -34,202 +17,188 @@ DEFAULT_TOP_K = 3
 
 def _get_embedding_fn():
     """
-    Trả về embedding function.
-    Sprint 1: Dùng Google Generative AI (Gemini).
+    Return an embedding function based on provider config from .env.
+
+    Preferred layout from guidelines.md / techstack.md:
+    - Retrieval -> Google Gemini embeddings
+    - Fallbacks stay graceful for local testing
     """
-    model_provider = os.getenv("RETRIEVAL_PROVIDER", "google")
-    if model_provider == "google":
+    provider = os.getenv("RETRIEVAL_PROVIDER", "google").lower()
+    model_name = os.getenv("RETRIEVAL_MODEL", "gemini-embedding-2-preview")
+
+    if provider == "google":
         try:
             from google import genai
 
             api_key = os.getenv("GOOGLE_API_KEY")
-            embedding_model = os.getenv("RETRIEVAL_MODEL", "gemini-embedding-2-preview")
             if api_key:
-                try:
-                    genai.configure(api_key=api_key)
+                genai.configure(api_key=api_key)
 
-                    def embed(text: str) -> list:
-                        result = genai.embed_content(model=embedding_model, content=text, task_type="retrieval_query")
-                        return result["embedding"]
+                def embed(text: str) -> list:
+                    result = genai.embed_content(
+                        model=model_name,
+                        content=text,
+                        task_type="retrieval_query",
+                    )
+                    return result["embedding"]
 
-                    return embed
-                except Exception as e:
-                    print(f"⚠️  Google Embedding error: {e}")
-        except ImportError:
-            print("Error: google.generativeai is not installed")
+                return embed
+        except Exception as error:
+            print(f"Warning: Google embedding setup failed: {error}")
 
-    elif model_provider == "openai":
+    if provider == "openai":
         try:
             from openai import OpenAI
 
             client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-            embedding_model = os.getenv("RETRIEVAL_MODEL", "text-embedding-3-small")
 
             def embed(text: str) -> list:
-                resp = client.embeddings.create(input=text, model=embedding_model)
-                return resp.data[0].embedding
+                response = client.embeddings.create(input=text, model=model_name)
+                return response.data[0].embedding
 
             return embed
-        except ImportError:
-            pass
-    elif model_provider == "local":
+        except Exception as error:
+            print(f"Warning: OpenAI embedding setup failed: {error}")
+
+    if provider == "local":
         try:
             from sentence_transformers import SentenceTransformer
 
-            embedding_model = os.getenv("RETRIEVAL_MODEL", "all-MiniLM-L6-v2")
-            model = SentenceTransformer(embedding_model)
+            local_model = SentenceTransformer(model_name)
 
             def embed(text: str) -> list:
-                return model.encode([text])[0].tolist()
+                return local_model.encode([text])[0].tolist()
 
             return embed
-        except ImportError:
-            pass
-    else:
-        # Fallback: random embeddings cho test (KHÔNG dùng production)
-        import random
+        except Exception as error:
+            print(f"Warning: local embedding setup failed: {error}")
 
-        def embed(text: str) -> list:
-            # text-embedding-004 có 768 dimensions mặc định
-            return [random.random() for _ in range(768)]
+    import random
 
-        print("⚠️  WARNING: Using random embeddings (test only). Check GOOGLE_API_KEY.")
-        return embed
+    def embed(text: str) -> list:
+        return [random.random() for _ in range(384)]
+
+    print("Warning: falling back to random embeddings for local smoke tests.")
+    return embed
 
 
 def _get_collection():
-    """
-    Kết nối ChromaDB collection.
-    TODO Sprint 2: Đảm bảo collection đã được build từ Step 3 trong README.
-    """
     import chromadb
 
-    client = chromadb.PersistentClient(path="./chroma_db")
+    db_path = os.getenv("CHROMA_DB_PATH", "./chroma_db")
+    collection_name = os.getenv("CHROMA_COLLECTION", "day09_docs")
+
+    client = chromadb.PersistentClient(path=db_path)
     try:
-        collection = client.get_collection("day09_docs")
+        return client.get_collection(collection_name)
     except Exception:
-        # Auto-create nếu chưa có
-        collection = client.get_or_create_collection("day09_docs", metadata={"hnsw:space": "cosine"})
-        print("⚠️  Collection 'day09_docs' chưa có data. Chạy index script trong README trước.")
-    return collection
+        print(
+            f"Warning: collection '{collection_name}' is missing or empty. "
+            "Returning an auto-created empty collection."
+        )
+        return client.get_or_create_collection(
+            collection_name,
+            metadata={"hnsw:space": "cosine"},
+        )
 
 
 def retrieve_dense(query: str, top_k: int = DEFAULT_TOP_K) -> list:
-    """
-    Dense retrieval: embed query → query ChromaDB → trả về top_k chunks.
-
-    TODO Sprint 2: Implement phần này.
-    - Dùng _get_embedding_fn() để embed query
-    - Query collection với n_results=top_k
-    - Format result thành list of dict
-
-    Returns:
-        list of {"text": str, "source": str, "score": float, "metadata": dict}
-    """
-    # TODO: Implement dense retrieval
     embed = _get_embedding_fn()
     query_embedding = embed(query)
 
     try:
         collection = _get_collection()
         results = collection.query(
-            query_embeddings=[query_embedding], n_results=top_k, include=["documents", "distances", "metadatas"]
+            query_embeddings=[query_embedding],
+            n_results=top_k,
+            include=["documents", "distances", "metadatas"],
         )
 
+        documents = results.get("documents", [[]])[0]
+        distances = results.get("distances", [[]])[0]
+        metadatas = results.get("metadatas", [[]])[0]
+
         chunks = []
-        for i, (doc, dist, meta) in enumerate(
-            zip(results["documents"][0], results["distances"][0], results["metadatas"][0])
-        ):
+        for document, distance, metadata in zip(documents, distances, metadatas):
+            metadata = metadata or {}
             chunks.append(
                 {
-                    "text": doc,
-                    "source": meta.get("source", "unknown"),
-                    "score": round(1 - dist, 4),  # cosine similarity
-                    "metadata": meta,
+                    "text": document,
+                    "source": metadata.get("source", "unknown"),
+                    "score": round(max(0.0, 1 - distance), 4),
+                    "metadata": metadata,
                 }
             )
         return chunks
-
-    except Exception as e:
-        print(f"⚠️  ChromaDB query failed: {e}")
-        # Fallback: return empty (abstain)
+    except Exception as error:
+        print(f"Warning: ChromaDB query failed: {error}")
         return []
 
 
 def run(state: dict) -> dict:
-    """
-    Worker entry point — gọi từ graph.py.
-
-    Args:
-        state: AgentState dict
-
-    Returns:
-        Updated AgentState với retrieved_chunks và retrieved_sources
-    """
     task = state.get("task", "")
     top_k = state.get("retrieval_top_k", DEFAULT_TOP_K)
+    llm_profile = state.get("llm_profiles", {}).get(
+        "retrieval",
+        {
+            "provider": os.getenv("RETRIEVAL_PROVIDER", "google"),
+            "model": os.getenv("RETRIEVAL_MODEL", "gemini-embedding-2-preview"),
+        },
+    )
 
     state.setdefault("workers_called", [])
     state.setdefault("history", [])
-
+    state.setdefault("worker_io_logs", [])
     state["workers_called"].append(WORKER_NAME)
 
-    # Log worker IO (theo contract)
     worker_io = {
         "worker": WORKER_NAME,
-        "input": {"task": task, "top_k": top_k},
+        "input": {
+            "task": task,
+            "top_k": top_k,
+            "llm_profile": llm_profile,
+        },
         "output": None,
         "error": None,
     }
 
     try:
         chunks = retrieve_dense(task, top_k=top_k)
-
-        sources = list({c["source"] for c in chunks})
+        sources = list(dict.fromkeys(chunk["source"] for chunk in chunks))
 
         state["retrieved_chunks"] = chunks
         state["retrieved_sources"] = sources
-
         worker_io["output"] = {
             "chunks_count": len(chunks),
             "sources": sources,
         }
-        state["history"].append(f"[{WORKER_NAME}] retrieved {len(chunks)} chunks from {sources}")
-
-    except Exception as e:
-        worker_io["error"] = {"code": "RETRIEVAL_FAILED", "reason": str(e)}
+        state["history"].append(
+            f"[{WORKER_NAME}] retrieved {len(chunks)} chunks from {sources}"
+        )
+    except Exception as error:
         state["retrieved_chunks"] = []
         state["retrieved_sources"] = []
-        state["history"].append(f"[{WORKER_NAME}] ERROR: {e}")
+        worker_io["error"] = {
+            "code": "RETRIEVAL_FAILED",
+            "reason": str(error),
+        }
+        state["history"].append(f"[{WORKER_NAME}] ERROR: {error}")
 
-    # Ghi worker IO vào state để trace
-    state.setdefault("worker_io_logs", []).append(worker_io)
-
+    state["worker_io_logs"].append(worker_io)
     return state
 
 
-# ─────────────────────────────────────────────
-# Test độc lập
-# ─────────────────────────────────────────────
-
 if __name__ == "__main__":
     print("=" * 50)
-    print("Retrieval Worker — Standalone Test")
+    print("Retrieval Worker - Standalone Test")
     print("=" * 50)
 
-    test_queries = [
-        "SLA ticket P1 là bao lâu?",
-        "Điều kiện được hoàn tiền là gì?",
-        "Ai phê duyệt cấp quyền Level 3?",
-    ]
-
-    for query in test_queries:
-        print(f"\n▶ Query: {query}")
-        result = run({"task": query})
-        chunks = result.get("retrieved_chunks", [])
-        print(f"  Retrieved: {len(chunks)} chunks")
-        for c in chunks[:2]:
-            print(f"    [{c['score']:.3f}] {c['source']}: {c['text'][:80]}...")
-        print(f"  Sources: {result.get('retrieved_sources', [])}")
-
-    print("\n✅ retrieval_worker test done.")
+    for query in [
+        "SLA ticket P1 la bao lau?",
+        "Dieu kien duoc hoan tien la gi?",
+        "Ai phe duyet cap quyen Level 3?",
+    ]:
+        result = run({"task": query, "history": []})
+        print(f"\nQuery: {query}")
+        print(f"Retrieved: {len(result.get('retrieved_chunks', []))} chunks")
+        print(f"Sources: {result.get('retrieved_sources', [])}")
