@@ -21,6 +21,12 @@ import argparse
 from datetime import datetime
 from typing import Optional
 
+# Fix Windows console encoding for emoji/unicode output
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 # Import graph
 sys.path.insert(0, os.path.dirname(__file__))
 from graph import run_graph, save_trace
